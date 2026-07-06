@@ -333,7 +333,9 @@ CORS_FRONTEND_HOSTS = [
     if origin.strip()
 ]
 
-_dev_cors_regex = r"https?://(localhost|127\.0\.0\.1|(?:\d{1,3}\.){3}\d{1,3}|\[[a-fA-F0-9:]+\]):\d+"
+# Credentialed CORS must not reflect arbitrary IP-literal origins. Restrict the
+# dev regex to loopback; operators allow additional origins via FRONTEND_HOST.
+_dev_cors_regex = r"https?://(localhost|127\.0\.0\.1|\[::1\]):\d+"
 
 app.add_middleware(
     CORSMiddleware,
@@ -496,19 +498,28 @@ def _build_chat_history(conversation: Dict[str, Any]) -> List[Dict[str, str]]:
     """Extract prior turns from a conversation into [{role, content}, ...] for multi-turn context."""
     history = []
     for msg in conversation.get("messages", []):
-        if msg["role"] == "user":
-            history.append({"role": "user", "content": msg["content"]})
-        elif msg["role"] == "assistant":
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if not role:
+            continue
+        if role == "user":
+            history.append({"role": "user", "content": msg.get("content", "")})
+        elif role == "assistant":
             # Prefer chairman synthesis (stage3), fall back to first stage1 response
             content = None
-            if msg.get("stage3") and msg["stage3"].get("response"):
-                content = msg["stage3"]["response"]
-            elif msg.get("stage1") and len(msg["stage1"]) > 0:
-                first_success = next(
-                    (r for r in msg["stage1"] if not r.get("error")),
-                    msg["stage1"][0]
-                )
-                content = first_success.get("response", "")
+            stage3 = msg.get("stage3")
+            if isinstance(stage3, dict) and stage3.get("response"):
+                content = stage3["response"]
+            else:
+                stage1 = msg.get("stage1")
+                if isinstance(stage1, list) and len(stage1) > 0:
+                    first_success = next(
+                        (r for r in stage1 if isinstance(r, dict) and not r.get("error")),
+                        stage1[0]
+                    )
+                    if isinstance(first_success, dict):
+                        content = first_success.get("response", "")
             if content:
                 history.append({"role": "assistant", "content": content})
     return history

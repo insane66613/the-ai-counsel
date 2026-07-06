@@ -783,7 +783,11 @@ async def get_conversation_progress(conversation_id: str):
     if run.get("critique_mode") == "audit":
         prog["stage2a"] = {"count": len(run.get("stage2a_responses") or []), "total": run["progress"].get("stage2a", {}).get("total", 0)}
         prog["stage2b"] = {"count": len(run.get("stage2b_responses") or []), "total": run["progress"].get("stage2b", {}).get("total", 0)}
-        prog["stage2c"] = {"count": len(run.get("stage2c_responses") or []), "total": run["progress"].get("stage2c", {}).get("total", 1)}
+        stage2c_progress = run["progress"].get("stage2c", {})
+        stage2c_count = stage2c_progress.get("count") or len(run.get("stage2c_responses") or [])
+        if not stage2c_count and run.get("stage2c_response") is not None:
+            stage2c_count = 1
+        prog["stage2c"] = {"count": stage2c_count, "total": stage2c_progress.get("total", 1)}
 
     return {
         "active": True,
@@ -1962,6 +1966,10 @@ class UpdateSettingsRequest(BaseModel):
     notion2api_root: Optional[str] = None
     notion2api_auto_launch: Optional[bool] = None
     notion2api_persist_chats: Optional[bool] = None
+    notion2api_firing_mode: Optional[Literal["rapid_fire", "random_delay", "sequential"]] = None
+    notion2api_sequential_max_concurrent: Optional[int] = None
+    notion2api_pause_on_failure: Optional[bool] = None
+    notion2api_default_continuation_mode: Optional[Literal["normal", "fail_safe", "conservative"]] = None
 
     # API Keys
     serper_api_key: Optional[str] = None
@@ -2073,6 +2081,10 @@ async def get_app_settings():
         "notion2api_root": settings.notion2api_root,
         "notion2api_auto_launch": settings.notion2api_auto_launch,
         "notion2api_persist_chats": settings.notion2api_persist_chats,
+        "notion2api_firing_mode": settings.notion2api_firing_mode,
+        "notion2api_sequential_max_concurrent": settings.notion2api_sequential_max_concurrent,
+        "notion2api_pause_on_failure": settings.notion2api_pause_on_failure,
+        "notion2api_default_continuation_mode": settings.notion2api_default_continuation_mode,
 
         # API Key Status
         "serper_api_key_set": bool(settings.serper_api_key),
@@ -2260,6 +2272,16 @@ async def update_app_settings(request: UpdateSettingsRequest):
         updates["notion2api_auto_launch"] = request.notion2api_auto_launch
     if request.notion2api_persist_chats is not None:
         updates["notion2api_persist_chats"] = request.notion2api_persist_chats
+    if request.notion2api_firing_mode is not None:
+        updates["notion2api_firing_mode"] = request.notion2api_firing_mode
+    if request.notion2api_sequential_max_concurrent is not None:
+        if request.notion2api_sequential_max_concurrent < 1 or request.notion2api_sequential_max_concurrent > 8:
+            raise HTTPException(status_code=400, detail="notion2api_sequential_max_concurrent must be between 1 and 8")
+        updates["notion2api_sequential_max_concurrent"] = request.notion2api_sequential_max_concurrent
+    if request.notion2api_pause_on_failure is not None:
+        updates["notion2api_pause_on_failure"] = request.notion2api_pause_on_failure
+    if request.notion2api_default_continuation_mode is not None:
+        updates["notion2api_default_continuation_mode"] = request.notion2api_default_continuation_mode
 
     if request.full_content_results is not None:
         # Validate range
@@ -2289,23 +2311,31 @@ async def update_app_settings(request: UpdateSettingsRequest):
         # Also set in environment for immediate use
         if request.serper_api_key:
             os.environ["SERPER_API_KEY"] = request.serper_api_key
+        else:
+            os.environ.pop("SERPER_API_KEY", None)
 
     if request.tavily_api_key is not None:
         updates["tavily_api_key"] = request.tavily_api_key
         # Also set in environment for immediate use
         if request.tavily_api_key:
             os.environ["TAVILY_API_KEY"] = request.tavily_api_key
+        else:
+            os.environ.pop("TAVILY_API_KEY", None)
 
     if request.brave_api_key is not None:
         updates["brave_api_key"] = request.brave_api_key
         # Also set in environment for immediate use
         if request.brave_api_key:
             os.environ["BRAVE_API_KEY"] = request.brave_api_key
+        else:
+            os.environ.pop("BRAVE_API_KEY", None)
 
     if request.tinyfish_api_key is not None:
         updates["tinyfish_api_key"] = request.tinyfish_api_key
         if request.tinyfish_api_key:
             os.environ["TINYFISH_API_KEY"] = request.tinyfish_api_key
+        else:
+            os.environ.pop("TINYFISH_API_KEY", None)
 
     if request.openrouter_api_key is not None:
         updates["openrouter_api_key"] = request.openrouter_api_key
@@ -2466,6 +2496,10 @@ async def update_app_settings(request: UpdateSettingsRequest):
         "notion2api_root": settings.notion2api_root,
         "notion2api_auto_launch": settings.notion2api_auto_launch,
         "notion2api_persist_chats": settings.notion2api_persist_chats,
+        "notion2api_firing_mode": settings.notion2api_firing_mode,
+        "notion2api_sequential_max_concurrent": settings.notion2api_sequential_max_concurrent,
+        "notion2api_pause_on_failure": settings.notion2api_pause_on_failure,
+        "notion2api_default_continuation_mode": settings.notion2api_default_continuation_mode,
 
         # API Key Status
         "serper_api_key_set": bool(settings.serper_api_key),
@@ -2718,7 +2752,7 @@ class TestOpenRouterRequest(BaseModel):
 class TestProviderRequest(BaseModel):
     """Request to test a specific provider's API key."""
     provider_id: str
-    api_key: str
+    api_key: Optional[str] = None
 
 
 @app.post("/api/settings/test-provider", dependencies=[Depends(_require_admin)])

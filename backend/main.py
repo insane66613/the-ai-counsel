@@ -2013,6 +2013,7 @@ class UpdateSettingsRequest(BaseModel):
 
     # Iterative Debate
     critique_mode: Optional[str] = None
+    audit_profile: Optional[str] = None
     debate_rounds: Optional[int] = None
     auto_converge: Optional[bool] = None
     convergence_threshold: Optional[int] = None
@@ -2150,6 +2151,7 @@ async def get_app_settings():
 
         # Iterative Debate
         "critique_mode": settings.critique_mode,
+        "audit_profile": settings.audit_profile,
         "debate_rounds": settings.debate_rounds,
         "auto_converge": settings.auto_converge,
         "convergence_threshold": settings.convergence_threshold,
@@ -2408,6 +2410,10 @@ async def update_app_settings(request: UpdateSettingsRequest):
         if request.critique_mode not in ("freeform", "paragraph", "claim", "audit"):
             raise HTTPException(status_code=400, detail="critique_mode must be freeform, paragraph, claim, or audit")
         updates["critique_mode"] = request.critique_mode
+    if request.audit_profile is not None:
+        if request.audit_profile not in ("general", "legal"):
+            raise HTTPException(status_code=400, detail="audit_profile must be general or legal")
+        updates["audit_profile"] = request.audit_profile
     if request.debate_rounds is not None:
         if not (1 <= request.debate_rounds <= MAX_DEBATE_ROUNDS):
             raise HTTPException(status_code=400, detail=f"debate_rounds must be 1-{MAX_DEBATE_ROUNDS}")
@@ -2531,6 +2537,7 @@ async def update_app_settings(request: UpdateSettingsRequest):
 
         # Iterative Debate
         "critique_mode": settings.critique_mode,
+        "audit_profile": settings.audit_profile,
         "debate_rounds": settings.debate_rounds,
         "auto_converge": settings.auto_converge,
         "convergence_threshold": settings.convergence_threshold,

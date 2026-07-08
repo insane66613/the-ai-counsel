@@ -23,6 +23,7 @@ from .council import (
     build_stage2a_json_skeleton,
     query_model,
     stage3_synthesize_final,
+    strip_thinking_blocks,
     _query_model_gated
 )
 from .costs import build_iterative_debate_cost_report
@@ -1355,7 +1356,7 @@ async def run_audit_pipeline(
             else:
                 stage3_response = {
                     "model": chairman,
-                    "response": final_res.get("content", ""),
+                    "response": strip_thinking_blocks(final_res.get("content", "")),
                     "usage": final_res.get("usage"),
                     "cost": final_res.get("cost"),
                 }

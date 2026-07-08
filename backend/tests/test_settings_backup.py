@@ -263,6 +263,7 @@ def test_update_settings_persists_search_tuning_fields(client):
         "search_result_count": 12,
         "search_hybrid_mode": False,
         "full_content_results": 7,
+        "audit_profile": "legal",
     }
 
     updated_settings = Settings(**payload)
@@ -285,6 +286,13 @@ def test_update_settings_rejects_invalid_search_result_count(client):
 
     assert response.status_code == 400
     assert "search_result_count" in response.json()["detail"]
+
+
+def test_update_settings_rejects_invalid_audit_profile(client):
+    response = client.put("/api/settings", json={"audit_profile": "medical"})
+
+    assert response.status_code == 400
+    assert "audit_profile" in response.json()["detail"]
 
 
 def test_default_settings_returns_council_and_advisor_prompt_defaults(client):

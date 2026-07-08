@@ -480,3 +480,45 @@ async def test_notion2api_query_preserves_finish_reason(fake_httpx, notion_env):
     assert result["finish_reason"] == "length"
     sent = fake_httpx.instances[-1].kwargs["json"]
     assert sent["max_tokens"] == 16000
+
+
+@pytest.mark.asyncio
+async def test_notion2api_query_ignores_hidden_thinking_content_items(fake_httpx, notion_env):
+    stream_text = "\n".join([
+        "data: " + json.dumps({
+            "choices": [{
+                "delta": {
+                    "content": [
+                        {"type": "thinking", "content": "I should verify the rule first."},
+                        {"type": "text", "text": "Final answer."},
+                    ]
+                }
+            }]
+        }),
+        "data: [DONE]",
+    ])
+    fake_httpx.responses.append((200, {}, stream_text))
+
+    result = await Notion2APIProvider().query(
+        "notion2api:apricot-sorbet-high",
+        [{"role": "user", "content": "synthesize"}],
+    )
+
+    assert result["content"] == "Final answer."
+
+
+@pytest.mark.asyncio
+async def test_notion2api_query_ignores_hidden_top_level_thinking_events(fake_httpx, notion_env):
+    stream_text = "\n".join([
+        "data: " + json.dumps({"type": "thinking", "content": "I should plan internally."}),
+        "data: " + json.dumps({"choices": [{"delta": {"content": "Visible answer."}}]}),
+        "data: [DONE]",
+    ])
+    fake_httpx.responses.append((200, {}, stream_text))
+
+    result = await Notion2APIProvider().query(
+        "notion2api:ambrosia-tart-high",
+        [{"role": "user", "content": "synthesize"}],
+    )
+
+    assert result["content"] == "Visible answer."

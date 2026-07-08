@@ -243,23 +243,39 @@ class Notion2APIProvider(LLMProvider):
         combined = " ".join([code, error_type, message])
         return any(term in combined for term in retryable_terms)
 
+    @staticmethod
+    def _is_hidden_content_type(value: Any) -> bool:
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        return normalized in {
+            "thinking",
+            "reasoning",
+            "reasoning_content",
+            "redacted_thinking",
+            "chain_of_thought",
+        } or normalized.endswith("_thinking")
+
     def _coerce_stream_text(self, value: Any) -> str:
         if isinstance(value, str):
             return value
+        if isinstance(value, dict):
+            if self._is_hidden_content_type(value.get("type")):
+                return ""
+            text = value.get("text") or value.get("content") or value.get("delta")
+            return self._coerce_stream_text(text)
         if isinstance(value, list):
             parts: List[str] = []
             for item in value:
                 if isinstance(item, str):
                     parts.append(item)
                 elif isinstance(item, dict):
-                    text = item.get("text") or item.get("content")
-                    if isinstance(text, str):
-                        parts.append(text)
+                    parts.append(self._coerce_stream_text(item))
             return "".join(parts)
         return ""
 
     def _extract_stream_content(self, event: Any) -> str:
         if not isinstance(event, dict):
+            return ""
+        if self._is_hidden_content_type(event.get("type")):
             return ""
 
         parts: List[str] = []
@@ -269,13 +285,16 @@ class Notion2APIProvider(LLMProvider):
                 if not isinstance(choice, dict):
                     continue
 
+                if self._is_hidden_content_type(choice.get("type")):
+                    continue
+
                 delta = choice.get("delta")
-                if isinstance(delta, dict):
+                if isinstance(delta, dict) and not self._is_hidden_content_type(delta.get("type")):
                     parts.append(self._coerce_stream_text(delta.get("content")))
                     parts.append(self._coerce_stream_text(delta.get("text")))
 
                 message = choice.get("message")
-                if isinstance(message, dict):
+                if isinstance(message, dict) and not self._is_hidden_content_type(message.get("type")):
                     parts.append(self._coerce_stream_text(message.get("content")))
 
                 parts.append(self._coerce_stream_text(choice.get("text")))

@@ -11,7 +11,9 @@ from backend.audit_pipeline import (
     stage2b_collect_audits,
     extract_material_claims,
     format_aggregate_verdicts_for_prompt,
-    format_audit_corrections_for_stage4
+    format_audit_corrections_for_stage4,
+    _stage3_response_has_label_substitution_artifacts,
+    _append_stage3_label_retry_instructions,
 )
 from backend.council import (
     EvaluationError,
@@ -1037,3 +1039,31 @@ async def test_run_audit_pipeline_stage3_invalid_type_provider_result(mock_setti
         assert complete["error"]["stage"] == "stage3"
         assert complete["error"]["status"] == "failed_synthesis"
         assert "invalid response" in complete["error"]["message"]
+
+
+
+def test_stage3_label_substitution_artifact_detector_flags_spliced_model_names():
+    label_to_model = {
+        "H": "Sonnet 5",
+        "C": "DeepSeek V4 Pro",
+        "G": "GLM 5.2",
+    }
+
+    contaminated = "Sonnet 5owever, the DeepSeek V4 Proounty argument fails and ****GLM 5.2rok appears."
+
+    assert _stage3_response_has_label_substitution_artifacts(contaminated, label_to_model)
+
+
+def test_stage3_label_substitution_artifact_detector_allows_standalone_model_names():
+    label_to_model = {"H": "Sonnet 5", "G": "GLM 5.2"}
+
+    clean = "Response H ranked first. Sonnet 5 was the strongest standalone response. However, County remains intact."
+
+    assert not _stage3_response_has_label_substitution_artifacts(clean, label_to_model)
+
+
+def test_stage3_retry_prompt_warns_against_single_letter_substitution():
+    prompt = _append_stage3_label_retry_instructions("Base prompt")
+
+    assert "Do not perform any find/replace operation on" in prompt
+    assert "single letters A-H" in prompt

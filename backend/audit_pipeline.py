@@ -41,6 +41,54 @@ MIN_VALID_EVALUATOR_RATIO = 0.5
 
 # We will implement the orchestration here.
 
+STAGE3_LABEL_SUBSTITUTION_RETRY_INSTRUCTIONS = """
+
+CRITICAL RETRY INSTRUCTION: The prior Stage 3 draft was rejected because model
+names were spliced into ordinary English words, consistent with an unsafe
+response-label substitution pass. Do not perform any find/replace operation on
+single letters A-H or on response labels. Preserve ordinary words exactly. If
+you mention peer rankings, refer to full tokens such as "Response H" or a full
+standalone model name only; never substitute model names into prose.
+"""
+
+
+def _model_label_artifact_aliases(label_to_model: Dict[str, str]) -> List[str]:
+    """Return likely display-name aliases that must not be spliced into words."""
+    aliases = set()
+    for model in (label_to_model or {}).values():
+        raw = str(model or "").strip()
+        if not raw:
+            continue
+        aliases.add(raw)
+        aliases.add(raw.split(":")[-1].strip())
+        cleaned = re.sub(r"^(?:notion2api|custom|openrouter|anthropic|openai|google|xai|deepseek|groq|mistral|ollama):", "", raw, flags=re.IGNORECASE)
+        aliases.add(cleaned.strip())
+        aliases.add(cleaned.split(":")[-1].strip())
+    return sorted({alias for alias in aliases if len(alias) >= 4}, key=len, reverse=True)
+
+
+def _stage3_response_has_label_substitution_artifacts(text: str, label_to_model: Dict[str, str]) -> bool:
+    """Detect model names incorrectly substituted into the middle of words.
+
+    The observed failure shape is output such as "Sonnet 5owever" or
+    "DeepSeek V4 Proounty", which happens when a model or post-processor treats
+    response labels (A-H) as bare letters and de-anonymizes them globally.
+    """
+    content = str(text or "")
+    if not content.strip():
+        return False
+    aliases = _model_label_artifact_aliases(label_to_model)
+    for alias in aliases:
+        pattern = re.compile(rf"(?<![A-Za-z0-9])\*{{0,4}}{re.escape(alias)}(?=[a-z])")
+        if pattern.search(content):
+            return True
+    return False
+
+
+def _append_stage3_label_retry_instructions(prompt: str) -> str:
+    return f"{prompt.rstrip()}\n{STAGE3_LABEL_SUBSTITUTION_RETRY_INSTRUCTIONS}"
+
+
 async def stage2a_collect_evaluations(
     user_query: str,
     search_context: str,
@@ -1354,12 +1402,49 @@ async def run_audit_pipeline(
                     "cost": final_res.get("cost"),
                 }
             else:
-                stage3_response = {
-                    "model": chairman,
-                    "response": strip_thinking_blocks(final_res.get("content", "")),
-                    "usage": final_res.get("usage"),
-                    "cost": final_res.get("cost"),
-                }
+                final_text = strip_thinking_blocks(final_res.get("content", ""))
+                stage3_attempts = [{"status": "completed", "contamination_detected": False}]
+                if _stage3_response_has_label_substitution_artifacts(final_text, label_to_model):
+                    logger.warning("Stage 3 output showed response-label substitution artifacts; retrying once.")
+                    stage3_attempts[0]["contamination_detected"] = True
+                    retry_prompt = _append_stage3_label_retry_instructions(synthesis_prompt)
+                    retry_res = await query_model(
+                        chairman,
+                        [{"role": "user", "content": retry_prompt}],
+                        temperature=settings.chairman_temperature,
+                        conversation_id=f"{session_id}-label-retry",
+                    )
+                    if isinstance(retry_res, dict) and not retry_res.get("error"):
+                        retry_text = strip_thinking_blocks(retry_res.get("content", ""))
+                        retry_contaminated = _stage3_response_has_label_substitution_artifacts(retry_text, label_to_model)
+                        stage3_attempts.append({
+                            "status": "completed",
+                            "contamination_detected": retry_contaminated,
+                        })
+                        if not retry_contaminated:
+                            final_text = retry_text
+                            final_res = retry_res
+                    else:
+                        stage3_attempts.append({
+                            "status": "provider_error",
+                            "error_message": retry_res.get("error_message") if isinstance(retry_res, dict) else "Invalid retry response.",
+                        })
+
+                if _stage3_response_has_label_substitution_artifacts(final_text, label_to_model):
+                    stage3_response = {
+                        "model": chairman,
+                        "error": True,
+                        "error_message": "Stage 3 output failed response-label substitution contamination guard.",
+                        "attempts": stage3_attempts,
+                    }
+                else:
+                    stage3_response = {
+                        "model": chairman,
+                        "response": final_text,
+                        "usage": final_res.get("usage"),
+                        "cost": final_res.get("cost"),
+                        "attempts": stage3_attempts,
+                    }
         except Exception as e:
             stage3_response = {"model": chairman, "error": True, "error_message": str(e)}
 

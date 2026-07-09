@@ -259,6 +259,20 @@ async def _query_model_gated(
 
 THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>[\s\S]*?</think>", re.IGNORECASE)
 UNCLOSED_THINK_RE = re.compile(r"<think\b[^>]*>[\s\S]*$", re.IGNORECASE)
+LEADING_PARTIAL_TAG_RE = re.compile(r"^\s*<[A-Za-z]{1,24}(?=#{1,6}\s)")
+VISIBLE_REASONING_PREAMBLE_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"user\s+(?:is\s+trying|wants|asked|message|is\s+asking)|"
+    r"i(?:'m| am)\s+(?:looking|re-evaluating|trying|going|checking|reading)|"
+    r"i\s+need\s+to|let\s+me\s+|the\s+user-message\s+is|generating\s+evaluation"
+    r")"
+)
+VISIBLE_REASONING_TRIM_TARGET_RE = re.compile(
+    r"(?is)(```(?:json)?\s*\n|#{1,6}\s+(?:overall|threshold|assessment|analysis|strengths|evaluation|final|summary)\b|\{\s*\"responses\")"
+)
+TEXT_CORRUPTION_ARTIFACT_RE = re.compile(
+    r"(?i)(^\s*<[A-Za-z]{1,24}(?=#{1,6}\s)|\bMempt\s+facts\b|\brelateected\b|\brespon\.\d|\btope\s+[?-]|\bqueming\b|\bsated\s+basis\b|\bex\s+available\s+sources\b)"
+)
 
 
 from .providers.openai import OpenAIProvider
@@ -513,6 +527,52 @@ def strip_thinking_blocks(text: Any) -> str:
     cleaned = THINK_BLOCK_RE.sub("", cleaned)
     cleaned = UNCLOSED_THINK_RE.sub("", cleaned)
     return cleaned.strip()
+
+
+def model_output_needs_hygiene_retry(text: Any) -> bool:
+    """Detect visible reasoning leaks or token-corruption artifacts in output."""
+
+    cleaned = strip_thinking_blocks(text)
+    if not cleaned:
+        return False
+    return bool(
+        VISIBLE_REASONING_PREAMBLE_RE.search(cleaned)
+        or TEXT_CORRUPTION_ARTIFACT_RE.search(cleaned)
+    )
+
+
+def clean_model_visible_output(text: Any) -> str:
+    """Clean visible output without changing substantive answer content.
+
+    This handles provider leaks that arrive as visible content rather than hidden
+    reasoning fields: partial tag prefixes before markdown headings and short
+    analysis preambles before the actual answer/JSON payload.
+    """
+
+    cleaned = strip_thinking_blocks(text)
+    cleaned = LEADING_PARTIAL_TAG_RE.sub("", cleaned).strip()
+    if VISIBLE_REASONING_PREAMBLE_RE.search(cleaned):
+        match = VISIBLE_REASONING_TRIM_TARGET_RE.search(cleaned)
+        if match:
+            cleaned = cleaned[match.start():].strip()
+            cleaned = LEADING_PARTIAL_TAG_RE.sub("", cleaned).strip()
+    return cleaned
+
+
+def build_output_hygiene_retry_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Append a narrow retry instruction for visible reasoning/corruption leaks."""
+
+    retry_messages = list(messages or [])
+    retry_messages.append({
+        "role": "user",
+        "content": (
+            "RETRY: The prior answer contained visible private reasoning, planning text, "
+            "or corrupted/truncated token fragments. Return only the final user-facing answer. "
+            "Do not include analysis preambles such as 'user wants', 'I need to', or 'let me'. "
+            "Do not include hidden reasoning. Ensure the answer text starts cleanly and is complete."
+        ),
+    })
+    return retry_messages
 
 
 def get_response_finish_reason(response: Dict[str, Any] | None) -> str | None:
@@ -853,7 +913,7 @@ async def stage1_collect_responses(
             # Native attachments to pass to provider
             model_attachments = prepared.native_candidates if prepared.native_candidates else None
 
-            return m, await query_model(
+            response = await query_model(
                 m,
                 model_msgs,
                 timeout=model_timeout,
@@ -861,6 +921,30 @@ async def stage1_collect_responses(
                 attachments=model_attachments,
                 conversation_id=conversation_id,
             )
+            if isinstance(response, dict) and not response.get("error"):
+                content = response.get("content", "")
+                if model_output_needs_hygiene_retry(content):
+                    logger.warning("Stage 1 output hygiene retry for %s", m)
+                    retry_response = await query_model(
+                        m,
+                        build_output_hygiene_retry_messages(model_msgs),
+                        timeout=model_timeout,
+                        temperature=council_temp,
+                        attachments=model_attachments,
+                        conversation_id=f"{conversation_id}-stage1-hygiene-{abs(hash(m))}" if conversation_id else None,
+                    )
+                    if (
+                        isinstance(retry_response, dict)
+                        and not retry_response.get("error")
+                        and not model_output_needs_hygiene_retry(retry_response.get("content", ""))
+                    ):
+                        response = retry_response
+                    else:
+                        response["content"] = clean_model_visible_output(content)
+                        response["hygiene_retry_failed"] = True
+                else:
+                    response["content"] = clean_model_visible_output(content)
+            return m, response
         except Exception as e:
             return m, {"error": True, "error_message": str(e)}
 
@@ -1010,7 +1094,7 @@ async def stage1_collect_responses(
                                     content = response.get('content', '')
                                     if not isinstance(content, str):
                                         content = str(content) if content is not None else ''
-                                    content = strip_thinking_blocks(content)
+                                    content = clean_model_visible_output(content)
                                     result = {
                                         "model": model,
                                         "response": content,
@@ -1538,7 +1622,7 @@ async def stage3_synthesize_final(
                 "cost": response.get('cost') if response else None,
             }
 
-        content = strip_thinking_blocks(response.get('content') or '')
+        content = clean_model_visible_output(response.get('content') or '')
         final_response = content
 
         if not final_response:

@@ -10,6 +10,8 @@ from backend.council import (
     generate_search_query,
     stage3_synthesize_final,
     strip_thinking_blocks,
+    clean_model_visible_output,
+    model_output_needs_hygiene_retry,
 )
 
 
@@ -37,6 +39,24 @@ def test_clean_generated_short_text_removes_title_prefix_quotes_and_punctuation(
 def test_strip_thinking_blocks_removes_complete_and_unclosed_markup():
     assert strip_thinking_blocks("<think>hidden</think>\n\nVisible answer") == "Visible answer"
     assert strip_thinking_blocks("<think>hidden only") == ""
+
+
+def test_clean_model_visible_output_strips_visible_reasoning_preamble():
+    raw = (
+        "user is trying to apply a template and I need to verify statutes."
+        "### Threshold framing\n\nThis is the answer."
+    )
+
+    assert clean_model_visible_output(raw) == "### Threshold framing\n\nThis is the answer."
+    assert model_output_needs_hygiene_retry(raw) is True
+
+
+def test_clean_model_visible_output_repairs_partial_tag_before_heading():
+    raw = "<l### Overall assessment\n\nYour clarification request is well-constructed."
+
+    assert clean_model_visible_output(raw).startswith("### Overall assessment")
+    assert model_output_needs_hygiene_retry(raw) is True
+
 
 
 @pytest.mark.asyncio

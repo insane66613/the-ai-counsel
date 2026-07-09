@@ -23,7 +23,7 @@ from .council import (
     build_stage2a_json_skeleton,
     query_model,
     stage3_synthesize_final,
-    strip_thinking_blocks,
+    clean_model_visible_output,
     _query_model_gated
 )
 from .costs import build_iterative_debate_cost_report
@@ -200,7 +200,7 @@ async def stage2a_collect_evaluations(
                     })
                     result = {
                         "model": model,
-                        "raw_output": content,
+                        "raw_output": clean_model_visible_output(content),
                         "parsed": parsed,
                         "usage": response.get("usage"),
                         "cost": response.get("cost"),
@@ -667,7 +667,7 @@ async def stage2b_collect_audits(
                     })
                     return {
                         "model": model,
-                        "raw_output": content,
+                        "raw_output": clean_model_visible_output(content),
                         "claim_verdicts": parsed,
                         "usage": response.get("usage"),
                         "cost": response.get("cost"),
@@ -1028,7 +1028,7 @@ async def stage2c_adjudicate(
                 return {
                     "record": result,
                     "model": chairman,
-                    "raw_output": content,
+                    "raw_output": clean_model_visible_output(content),
                     "usage": response.get("usage"),
                     "cost": response.get("cost"),
                     "attempts": attempts_ledger,
@@ -1402,7 +1402,7 @@ async def run_audit_pipeline(
                     "cost": final_res.get("cost"),
                 }
             else:
-                final_text = strip_thinking_blocks(final_res.get("content", ""))
+                final_text = clean_model_visible_output(final_res.get("content", ""))
                 stage3_attempts = [{"status": "completed", "contamination_detected": False}]
                 if _stage3_response_has_label_substitution_artifacts(final_text, label_to_model):
                     logger.warning("Stage 3 output showed response-label substitution artifacts; retrying once.")
@@ -1415,7 +1415,7 @@ async def run_audit_pipeline(
                         conversation_id=f"{session_id}-label-retry",
                     )
                     if isinstance(retry_res, dict) and not retry_res.get("error"):
-                        retry_text = strip_thinking_blocks(retry_res.get("content", ""))
+                        retry_text = clean_model_visible_output(retry_res.get("content", ""))
                         retry_contaminated = _stage3_response_has_label_substitution_artifacts(retry_text, label_to_model)
                         stage3_attempts.append({
                             "status": "completed",

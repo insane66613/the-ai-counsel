@@ -1067,3 +1067,27 @@ def test_stage3_retry_prompt_warns_against_single_letter_substitution():
 
     assert "Do not perform any find/replace operation on" in prompt
     assert "single letters A-H" in prompt
+
+
+
+def test_parse_stage2a_output_with_fallback_rejects_extra_response_labels():
+    content = '''
+    Assessing Response Inclusions
+
+    ```json
+    {
+      "responses": {
+        "Response A": {"overall_assessment": "Allowed"},
+        "Response D": {"overall_assessment": "Extra"},
+        "Response E": {"overall_assessment": "Extra"},
+        "Response F": {"overall_assessment": "Extra"},
+        "Response G": {"overall_assessment": "Extra"},
+        "Response H": {"overall_assessment": "Extra"}
+      },
+      "ranking": ["Response H", "Response G", "Response E", "Response C", "Response D", "Response A", "Response F"]
+    }
+    ```
+    '''
+
+    with pytest.raises(EvaluationError, match="outside the allowed set"):
+        parse_stage2a_output_with_fallback(content, ["Response A", "Response C"])

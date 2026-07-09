@@ -1835,10 +1835,27 @@ def parse_stage2a_output_with_fallback(
     """
     Parse Stage 2A output strictly, then recover a degraded ranking-only result
     from markdown or partial JSON when strict validation fails.
+
+    Recovery is deliberately conservative: if the evaluator explicitly mentions
+    any response labels outside the active allowed set, do not silently filter
+    those labels away. Treat the output as invalid so the caller can issue the
+    schema-correction retry with the exact allowed labels.
     """
     try:
         return parse_stage2a_output(ranking_text, valid_labels)
     except EvaluationError as strict_error:
+        expected_set = set(valid_labels)
+        mentioned_labels = {
+            re.sub(r"\s+", " ", match.group(0)).title()
+            for match in re.finditer(r"\bResponse\s+[A-Z]\b", str(ranking_text or ""), flags=re.IGNORECASE)
+        }
+        extra_labels = sorted(mentioned_labels - expected_set)
+        if extra_labels:
+            raise EvaluationError(
+                "Stage 2A output referenced response labels outside the allowed set: "
+                f"{', '.join(extra_labels)}."
+            ) from None
+
         try:
             recovered = parse_ranking_from_text(
                 ranking_text,
@@ -1849,7 +1866,6 @@ def parse_stage2a_output_with_fallback(
             raise strict_error from None
 
         prefixed = [label if label.startswith("Response ") else f"Response {label}" for label in recovered]
-        expected_set = set(valid_labels)
         if set(prefixed) != expected_set:
             raise strict_error from None
 

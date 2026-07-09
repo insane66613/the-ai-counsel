@@ -41,6 +41,12 @@ MIN_VALID_EVALUATOR_RATIO = 0.5
 
 # We will implement the orchestration here.
 
+_PROVIDER_PREFIX_RE = re.compile(
+    r"^(?:notion2api|custom|openrouter|anthropic|openai|google|xai|deepseek|groq|mistral|ollama|opencode-zen|opencode-go|nvidia):",
+    re.IGNORECASE,
+)
+
+
 STAGE3_LABEL_SUBSTITUTION_RETRY_INSTRUCTIONS = """
 
 CRITICAL RETRY INSTRUCTION: The prior Stage 3 draft was rejected because model
@@ -53,17 +59,54 @@ standalone model name only; never substitute model names into prose.
 
 
 def _model_label_artifact_aliases(label_to_model: Dict[str, str]) -> List[str]:
-    """Return likely display-name aliases that must not be spliced into words."""
-    aliases = set()
+    """Return likely display-name aliases that must not be spliced into words.
+
+    Stage 3 contamination often uses human display names (``Sonnet 5``) while
+    ``label_to_model`` may still hold transport IDs (``notion2api:...``). Expand
+    both forms and reuse any Stage 2 provider-metadata aliases already cached.
+    """
+
+    from .council import _STAGE2_MODEL_ALIAS_CACHE
+
+    aliases: set[str] = set()
     for model in (label_to_model or {}).values():
         raw = str(model or "").strip()
         if not raw:
             continue
-        aliases.add(raw)
-        aliases.add(raw.split(":")[-1].strip())
-        cleaned = re.sub(r"^(?:notion2api|custom|openrouter|anthropic|openai|google|xai|deepseek|groq|mistral|ollama):", "", raw, flags=re.IGNORECASE)
-        aliases.add(cleaned.strip())
-        aliases.add(cleaned.split(":")[-1].strip())
+
+        candidates = {raw, raw.split(":")[-1].strip(), raw.split("/")[-1].strip()}
+        cleaned = _PROVIDER_PREFIX_RE.sub("", raw).strip()
+        if cleaned:
+            candidates.add(cleaned)
+            candidates.add(cleaned.split(":")[-1].strip())
+            candidates.add(cleaned.split("/")[-1].strip())
+
+        for candidate in list(candidates):
+            if not candidate:
+                continue
+            slug = candidate.split("/")[-1].strip()
+            human = re.sub(r"[-_]+", " ", slug).strip()
+            if human:
+                candidates.add(human)
+                candidates.add(human.title())
+                candidates.add(
+                    " ".join(
+                        part.upper() if re.fullmatch(r"[vV]?\d+(?:\.\d+)*", part) else part.capitalize()
+                        for part in human.split()
+                    )
+                )
+
+        for key in {raw.casefold(), cleaned.casefold()}:
+            if not key:
+                continue
+            for cached in _STAGE2_MODEL_ALIAS_CACHE.get(key, []) or []:
+                value = str(cached or "").strip()
+                if value:
+                    candidates.add(value)
+                    candidates.add(value.split(":")[-1].strip())
+
+        aliases.update(value for value in candidates if value)
+
     return sorted({alias for alias in aliases if len(alias) >= 4}, key=len, reverse=True)
 
 
@@ -79,7 +122,7 @@ def _stage3_response_has_label_substitution_artifacts(text: str, label_to_model:
         return False
     aliases = _model_label_artifact_aliases(label_to_model)
     for alias in aliases:
-        pattern = re.compile(rf"(?<![A-Za-z0-9])\*{{0,4}}{re.escape(alias)}(?=[a-z])")
+        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(alias)}(?=[a-z])")
         if pattern.search(content):
             return True
     return False

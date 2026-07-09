@@ -522,3 +522,40 @@ async def test_notion2api_query_ignores_hidden_top_level_thinking_events(fake_ht
     )
 
     assert result["content"] == "Visible answer."
+
+
+@pytest.mark.asyncio
+async def test_notion2api_query_applies_visible_output_hygiene(fake_httpx, notion_env):
+    dirty = "<l### Overall assessment\n\nYour clarification request is well-constructed."
+    stream_text = "\n".join([
+        "data: " + json.dumps({"choices": [{"delta": {"content": dirty}}]}),
+        "data: [DONE]",
+    ])
+    fake_httpx.responses.append((200, {}, stream_text))
+
+    result = await Notion2APIProvider().query(
+        "notion2api:apricot-sorbet-high",
+        [{"role": "user", "content": "synthesize"}],
+    )
+
+    assert result["content"].startswith("### Overall assessment")
+    assert result.get("hygiene_applied") is True
+    assert "<l###" not in result["content"]
+
+
+@pytest.mark.asyncio
+async def test_notion2api_query_preserves_clean_content_without_hygiene_flag(fake_httpx, notion_env):
+    clean = "### Overall assessment\n\nThis answer is already clean."
+    stream_text = "\n".join([
+        "data: " + json.dumps({"choices": [{"delta": {"content": clean}}]}),
+        "data: [DONE]",
+    ])
+    fake_httpx.responses.append((200, {}, stream_text))
+
+    result = await Notion2APIProvider().query(
+        "notion2api:apricot-sorbet-high",
+        [{"role": "user", "content": "synthesize"}],
+    )
+
+    assert result["content"] == clean
+    assert "hygiene_applied" not in result

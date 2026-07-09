@@ -12,6 +12,7 @@ import httpx
 
 from .base import LLMProvider
 from .temperature import add_temperature_if_supported
+from ..output_hygiene import clean_model_visible_output, model_output_needs_hygiene_retry
 
 
 DEFAULT_NOTION2API_BASE_URL = "http://127.0.0.1:8120/v1"
@@ -331,6 +332,22 @@ class Notion2APIProvider(LLMProvider):
             max_concurrent = 3
         return mode, max_concurrent
 
+    def _sanitize_visible_content(self, content: Any) -> Dict[str, Any]:
+        """Clean Notion2API visible leaks at the provider boundary.
+
+        Returns cleaned content plus flags that tell council whether a retry is
+        still warranted. The cleaning is idempotent, so council/audit can run the
+        same helpers defensively without further mutating already-clean text.
+        """
+
+        raw = "" if content is None else str(content)
+        cleaned = clean_model_visible_output(raw)
+        return {
+            "content": cleaned,
+            "hygiene_applied": cleaned != raw.strip(),
+            "hygiene_retry_recommended": bool(cleaned) and model_output_needs_hygiene_retry(cleaned),
+        }
+
     async def query(
         self,
         model_id: str,
@@ -510,7 +527,13 @@ class Notion2APIProvider(LLMProvider):
 
                 content = "".join(content_parts)
                 if str(content or "").strip():
-                    result = {"content": content, "usage": usage, "error": False}
+                    sanitized = self._sanitize_visible_content(content)
+                    result = {"content": sanitized["content"], "usage": usage, "error": False}
+                    if sanitized["hygiene_applied"]:
+                        result["hygiene_applied"] = True
+                        logger.info("[Notion2API] Applied visible-output hygiene for model=%s", model_id)
+                    if sanitized["hygiene_retry_recommended"]:
+                        result["hygiene_retry_recommended"] = True
                     if finish_reason:
                         result["finish_reason"] = finish_reason
                     return result

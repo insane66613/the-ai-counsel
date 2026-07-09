@@ -16,6 +16,7 @@ from backend.audit_pipeline import (
     _append_stage3_label_retry_instructions,
 )
 from backend.council import (
+    _STAGE2_MODEL_ALIAS_CACHE,
     EvaluationError,
     parse_stage2a_output,
     parse_stage2a_output_with_fallback,
@@ -1091,3 +1092,36 @@ def test_parse_stage2a_output_with_fallback_rejects_extra_response_labels():
 
     with pytest.raises(EvaluationError, match="outside the allowed set"):
         parse_stage2a_output_with_fallback(content, ["Response A", "Response C"])
+
+
+
+def test_stage3_label_substitution_uses_cached_display_name_aliases():
+    transport_id = "notion2api:apricot-sorbet-high"
+    _STAGE2_MODEL_ALIAS_CACHE[transport_id.casefold()] = ["Sonnet 5", "Claude Sonnet 5"]
+    try:
+        label_to_model = {"H": transport_id, "G": "notion2api:glm-5-2"}
+        contaminated = "Sonnet 5owever the peer ranking still preferred Response H."
+        clean = "Response H ranked first. Sonnet 5 was the strongest standalone response."
+        assert _stage3_response_has_label_substitution_artifacts(contaminated, label_to_model)
+        assert not _stage3_response_has_label_substitution_artifacts(clean, label_to_model)
+    finally:
+        _STAGE2_MODEL_ALIAS_CACHE.pop(transport_id.casefold(), None)
+
+
+def test_stage3_label_substitution_humanizes_slug_transport_ids():
+    label_to_model = {"C": "notion2api:deepseek-v4-pro"}
+    contaminated = "Deepseek V4 Proounty remains the weak point."
+    assert _stage3_response_has_label_substitution_artifacts(contaminated, label_to_model)
+
+
+def test_parse_stage2a_output_with_fallback_allows_prose_mention_outside_set():
+    content = """
+    Response D is not under review here, but among the allowed set:
+
+    FINAL RANKING:
+    1. Response C
+    2. Response A
+    """
+    result = parse_stage2a_output_with_fallback(content, ["Response A", "Response C"])
+    assert result["degraded"] is True
+    assert result["ranking"] == ["Response C", "Response A"]

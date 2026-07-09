@@ -257,22 +257,13 @@ async def _query_model_gated(
     return result
 
 
-THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>[\s\S]*?</think>", re.IGNORECASE)
-UNCLOSED_THINK_RE = re.compile(r"<think\b[^>]*>[\s\S]*$", re.IGNORECASE)
-LEADING_PARTIAL_TAG_RE = re.compile(r"^\s*<[A-Za-z]{1,24}(?=#{1,6}\s)")
-VISIBLE_REASONING_PREAMBLE_RE = re.compile(
-    r"(?is)^\s*(?:"
-    r"user\s+(?:is\s+trying|wants|asked|message|is\s+asking)|"
-    r"i(?:'m| am)\s+(?:looking|re-evaluating|trying|going|checking|reading)|"
-    r"i\s+need\s+to|let\s+me\s+|the\s+user-message\s+is|generating\s+evaluation"
-    r")"
+from .output_hygiene import (
+    build_output_hygiene_retry_messages,
+    clean_model_visible_output,
+    model_output_needs_hygiene_retry,
+    strip_thinking_blocks,
 )
-VISIBLE_REASONING_TRIM_TARGET_RE = re.compile(
-    r"(?is)(```(?:json)?\s*\n|#{1,6}\s+(?:overall|threshold|assessment|analysis|strengths|evaluation|final|summary)\b|\{\s*\"responses\")"
-)
-TEXT_CORRUPTION_ARTIFACT_RE = re.compile(
-    r"(?i)(^\s*<[A-Za-z]{1,24}(?=#{1,6}\s)|\bMempt\s+facts\b|\brelateected\b|\brespon\.\d|\btope\s+[?-]|\bqueming\b|\bsated\s+basis\b|\bex\s+available\s+sources\b)"
-)
+
 
 
 from .providers.openai import OpenAIProvider
@@ -520,59 +511,9 @@ async def query_models_parallel(
     return dict(results)
 
 
-def strip_thinking_blocks(text: Any) -> str:
-    """Remove hidden-reasoning markup from model-visible text."""
-
-    cleaned = str(text or "").strip()
-    cleaned = THINK_BLOCK_RE.sub("", cleaned)
-    cleaned = UNCLOSED_THINK_RE.sub("", cleaned)
-    return cleaned.strip()
-
-
-def model_output_needs_hygiene_retry(text: Any) -> bool:
-    """Detect visible reasoning leaks or token-corruption artifacts in output."""
-
-    cleaned = strip_thinking_blocks(text)
-    if not cleaned:
-        return False
-    return bool(
-        VISIBLE_REASONING_PREAMBLE_RE.search(cleaned)
-        or TEXT_CORRUPTION_ARTIFACT_RE.search(cleaned)
-    )
-
-
-def clean_model_visible_output(text: Any) -> str:
-    """Clean visible output without changing substantive answer content.
-
-    This handles provider leaks that arrive as visible content rather than hidden
-    reasoning fields: partial tag prefixes before markdown headings and short
-    analysis preambles before the actual answer/JSON payload.
-    """
-
-    cleaned = strip_thinking_blocks(text)
-    cleaned = LEADING_PARTIAL_TAG_RE.sub("", cleaned).strip()
-    if VISIBLE_REASONING_PREAMBLE_RE.search(cleaned):
-        match = VISIBLE_REASONING_TRIM_TARGET_RE.search(cleaned)
-        if match:
-            cleaned = cleaned[match.start():].strip()
-            cleaned = LEADING_PARTIAL_TAG_RE.sub("", cleaned).strip()
-    return cleaned
-
-
-def build_output_hygiene_retry_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Append a narrow retry instruction for visible reasoning/corruption leaks."""
-
-    retry_messages = list(messages or [])
-    retry_messages.append({
-        "role": "user",
-        "content": (
-            "RETRY: The prior answer contained visible private reasoning, planning text, "
-            "or corrupted/truncated token fragments. Return only the final user-facing answer. "
-            "Do not include analysis preambles such as 'user wants', 'I need to', or 'let me'. "
-            "Do not include hidden reasoning. Ensure the answer text starts cleanly and is complete."
-        ),
-    })
-    return retry_messages
+def _stable_hygiene_model_slug(model: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(model or "")).strip("-")
+    return slug[:80] or "model"
 
 
 def get_response_finish_reason(response: Dict[str, Any] | None) -> str | None:
@@ -923,7 +864,11 @@ async def stage1_collect_responses(
             )
             if isinstance(response, dict) and not response.get("error"):
                 content = response.get("content", "")
-                if model_output_needs_hygiene_retry(content):
+                needs_hygiene_retry = bool(response.get("hygiene_retry_recommended")) or (
+                    not response.get("hygiene_applied")
+                    and model_output_needs_hygiene_retry(content)
+                )
+                if needs_hygiene_retry:
                     logger.warning("Stage 1 output hygiene retry for %s", m)
                     retry_response = await query_model(
                         m,
@@ -931,7 +876,10 @@ async def stage1_collect_responses(
                         timeout=model_timeout,
                         temperature=council_temp,
                         attachments=model_attachments,
-                        conversation_id=f"{conversation_id}-stage1-hygiene-{abs(hash(m))}" if conversation_id else None,
+                        conversation_id=(
+                            f"{conversation_id}-stage1-hygiene-{_stable_hygiene_model_slug(m)}"
+                            if conversation_id else None
+                        ),
                     )
                     if (
                         isinstance(retry_response, dict)
@@ -1912,6 +1860,75 @@ def parse_stage2a_output(
     return result
 
 
+
+def _normalize_stage2a_response_label(value: Any) -> str | None:
+    """Normalize a Response X / bare-letter token to ``Response X`` form."""
+
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if not text:
+        return None
+    match = re.fullmatch(r"(?i)(?:response\s+)?([A-Z])", text)
+    if not match:
+        match = re.search(r"(?i)\bResponse\s+([A-Z])\b", text)
+    if not match:
+        return None
+    return f"Response {match.group(1).upper()}"
+
+
+def _stage2a_structured_label_mentions(ranking_text: str) -> set[str]:
+    """Collect response labels from structured ranking/JSON fields only."""
+
+    text = str(ranking_text or "")
+    mentioned: set[str] = set()
+    block = None
+    try:
+        from .json_repair import extract_json_block
+
+        block = extract_json_block(text)
+    except Exception:
+        block = None
+
+    if isinstance(block, dict):
+        responses = block.get("responses")
+        if isinstance(responses, dict):
+            for key in responses.keys():
+                label = _normalize_stage2a_response_label(key)
+                if label:
+                    mentioned.add(label)
+        ranking = block.get("ranking")
+        if isinstance(ranking, list):
+            for item in ranking:
+                label = _normalize_stage2a_response_label(item)
+                if label:
+                    mentioned.add(label)
+        if mentioned:
+            return mentioned
+
+    ranking_section = re.search(
+        r"(?is)(?:#{1,6}\s*)?(?:\*\*|__)?(?:final\s+|overall\s+)?ranking"
+        r"(?:\s*\(best\s+to\s+worst\))?(?:\*\*|__)?\s*:?\s*(.*)$",
+        text,
+    )
+    scan_text = ranking_section.group(1) if ranking_section else ""
+    if not scan_text:
+        trailing: list[str] = []
+        for line in reversed([ln for ln in text.splitlines() if ln.strip()]):
+            if re.match(
+                r"(?i)^\s*(?:\d+[\.)]\s*|[-*]\s*)(?:response\s+)?[A-Z]\b",
+                line,
+            ):
+                trailing.append(line)
+                continue
+            break
+        scan_text = "\n".join(reversed(trailing))
+
+    for match in re.finditer(r"(?i)\bResponse\s+[A-Z]\b", scan_text):
+        label = _normalize_stage2a_response_label(match.group(0))
+        if label:
+            mentioned.add(label)
+    return mentioned
+
+
 def parse_stage2a_output_with_fallback(
     ranking_text: str,
     valid_labels: List[str],
@@ -1920,19 +1937,16 @@ def parse_stage2a_output_with_fallback(
     Parse Stage 2A output strictly, then recover a degraded ranking-only result
     from markdown or partial JSON when strict validation fails.
 
-    Recovery is deliberately conservative: if the evaluator explicitly mentions
-    any response labels outside the active allowed set, do not silently filter
-    those labels away. Treat the output as invalid so the caller can issue the
-    schema-correction retry with the exact allowed labels.
+    Recovery is deliberately conservative for structured ranking/JSON fields:
+    if those fields reference labels outside the active allowed set, do not
+    silently filter them away. Free-prose mentions outside the ranking payload
+    do not block recovery.
     """
     try:
         return parse_stage2a_output(ranking_text, valid_labels)
     except EvaluationError as strict_error:
         expected_set = set(valid_labels)
-        mentioned_labels = {
-            re.sub(r"\s+", " ", match.group(0)).title()
-            for match in re.finditer(r"\bResponse\s+[A-Z]\b", str(ranking_text or ""), flags=re.IGNORECASE)
-        }
+        mentioned_labels = _stage2a_structured_label_mentions(ranking_text)
         extra_labels = sorted(mentioned_labels - expected_set)
         if extra_labels:
             raise EvaluationError(

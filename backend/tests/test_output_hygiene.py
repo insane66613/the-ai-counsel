@@ -37,3 +37,47 @@ def test_true_reasoning_leak_still_trims_to_answer_boundary():
     )
     assert model_output_needs_hygiene_retry(raw) is True
     assert clean_model_visible_output(raw) == "### Threshold framing\n\nThis is the answer."
+
+
+def test_tool_action_preamble_trims_to_review_heading():
+    raw = (
+        "Let me search your workspace for any relevant context. "
+        "data practices request ICR 25044901 AxonmLet me search again."
+        "### Review of the Clarification Letter\n\nBody"
+    )
+    cleaned = clean_model_visible_output(raw)
+    assert cleaned == "### Review of the Clarification Letter\n\nBody"
+    assert model_output_needs_hygiene_retry(raw) is True
+
+
+def test_corrupt_notion_citation_heading_recursion_requires_retry():
+    raw = (
+        "### Review of the Clarification Letter\n\n"
+        "Text.[^{{notion-### Review of the Clarification Letter\n\n"
+        "Text.[^{{notion-### Review of the Clarification Letter\n\n"
+        "More text."
+    )
+    assert model_output_needs_hygiene_retry(raw) is True
+
+
+def test_model_name_splice_artifacts_require_retry():
+    samples = [
+        "Sonnet 5owever the issue remains.",
+        "DeepSeek V4 Proounty remains uncertain.",
+        "## ****GLM 5.2PT-5.5hairman's Synthesis",
+        "GLM 5.2rok 4.3 rankings were discussed.",
+    ]
+    for raw in samples:
+        assert model_output_needs_hygiene_retry(raw) is True
+
+
+def test_repeated_markdown_heading_requires_retry():
+    raw = "\n".join([
+        "### Review of the Clarification Letter",
+        "first body",
+        "### Review of the Clarification Letter",
+        "second body",
+        "### Review of the Clarification Letter",
+        "third body",
+    ])
+    assert model_output_needs_hygiene_retry(raw) is True

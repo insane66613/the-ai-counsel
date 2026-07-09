@@ -24,6 +24,7 @@ from .council import (
     query_model,
     stage3_synthesize_final,
     clean_model_visible_output,
+    model_output_needs_hygiene_retry,
     _query_model_gated
 )
 from .costs import build_iterative_debate_cost_report
@@ -55,6 +56,16 @@ response-label substitution pass. Do not perform any find/replace operation on
 single letters A-H or on response labels. Preserve ordinary words exactly. If
 you mention peer rankings, refer to full tokens such as "Response H" or a full
 standalone model name only; never substitute model names into prose.
+"""
+
+STAGE3_OUTPUT_HYGIENE_RETRY_INSTRUCTIONS = """
+
+CRITICAL RETRY INSTRUCTION: The prior Stage 3 draft contained visible private
+reasoning, tool-action narration, malformed citation fragments, repeated
+heading/body insertions, or model-name splice artifacts. Return only the final
+user-facing synthesis. Do not narrate workspace searches or verification steps.
+Do not include malformed citation placeholders, duplicated markdown headings,
+or model names spliced into ordinary words.
 """
 
 
@@ -130,6 +141,17 @@ def _stage3_response_has_label_substitution_artifacts(text: str, label_to_model:
 
 def _append_stage3_label_retry_instructions(prompt: str) -> str:
     return f"{prompt.rstrip()}\n{STAGE3_LABEL_SUBSTITUTION_RETRY_INSTRUCTIONS}"
+
+
+def _append_stage3_output_hygiene_retry_instructions(prompt: str) -> str:
+    return f"{prompt.rstrip()}\n{STAGE3_OUTPUT_HYGIENE_RETRY_INSTRUCTIONS}"
+
+
+def _stage3_response_has_output_hygiene_artifacts(text: str, label_to_model: Dict[str, str]) -> bool:
+    return bool(
+        model_output_needs_hygiene_retry(text)
+        or _stage3_response_has_label_substitution_artifacts(text, label_to_model)
+    )
 
 
 async def stage2a_collect_evaluations(
@@ -1446,20 +1468,22 @@ async def run_audit_pipeline(
                 }
             else:
                 final_text = clean_model_visible_output(final_res.get("content", ""))
-                stage3_attempts = [{"status": "completed", "contamination_detected": False}]
-                if _stage3_response_has_label_substitution_artifacts(final_text, label_to_model):
-                    logger.warning("Stage 3 output showed response-label substitution artifacts; retrying once.")
-                    stage3_attempts[0]["contamination_detected"] = True
-                    retry_prompt = _append_stage3_label_retry_instructions(synthesis_prompt)
+                initial_contaminated = _stage3_response_has_output_hygiene_artifacts(final_text, label_to_model)
+                stage3_attempts = [{"status": "completed", "contamination_detected": initial_contaminated}]
+                if initial_contaminated:
+                    logger.warning("Stage 3 output showed visible-output hygiene artifacts; retrying once.")
+                    retry_prompt = _append_stage3_output_hygiene_retry_instructions(
+                        _append_stage3_label_retry_instructions(synthesis_prompt)
+                    )
                     retry_res = await query_model(
                         chairman,
                         [{"role": "user", "content": retry_prompt}],
                         temperature=settings.chairman_temperature,
-                        conversation_id=f"{session_id}-label-retry",
+                        conversation_id=f"{session_id}-hygiene-retry",
                     )
                     if isinstance(retry_res, dict) and not retry_res.get("error"):
                         retry_text = clean_model_visible_output(retry_res.get("content", ""))
-                        retry_contaminated = _stage3_response_has_label_substitution_artifacts(retry_text, label_to_model)
+                        retry_contaminated = _stage3_response_has_output_hygiene_artifacts(retry_text, label_to_model)
                         stage3_attempts.append({
                             "status": "completed",
                             "contamination_detected": retry_contaminated,
@@ -1473,11 +1497,11 @@ async def run_audit_pipeline(
                             "error_message": retry_res.get("error_message") if isinstance(retry_res, dict) else "Invalid retry response.",
                         })
 
-                if _stage3_response_has_label_substitution_artifacts(final_text, label_to_model):
+                if _stage3_response_has_output_hygiene_artifacts(final_text, label_to_model):
                     stage3_response = {
                         "model": chairman,
                         "error": True,
-                        "error_message": "Stage 3 output failed response-label substitution contamination guard.",
+                        "error_message": "Stage 3 output failed visible-output hygiene contamination guard.",
                         "attempts": stage3_attempts,
                     }
                 else:

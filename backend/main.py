@@ -2929,7 +2929,7 @@ async def test_notion2api_connection(request: TestNotion2APIRequest):
 
     settings = get_settings()
     url = request.url or settings.notion2api_base_url
-    token = request.api_key if request.api_key is not None else (settings.notion2api_api_key or os.getenv("NOTION2API_API_KEY") or "")
+    token = resolve_api_key("notion2api", request.api_key)
     return await Notion2APIProvider().validate_connection(url, token)
 
 
@@ -2976,7 +2976,7 @@ async def get_notion2api_status():
 
     settings = get_settings()
     base_url = (settings.notion2api_base_url or os.getenv("NOTION2API_BASE_URL") or "http://127.0.0.1:8120/v1").rstrip("/")
-    token = settings.notion2api_api_key or os.getenv("NOTION2API_API_KEY") or ""
+    token = resolve_api_key("notion2api")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     details = {
         "base_url": base_url,

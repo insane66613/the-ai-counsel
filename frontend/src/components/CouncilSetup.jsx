@@ -4,6 +4,7 @@ import CouncilGrid from './CouncilGrid';
 import EditableCouncilGrid, { NEW_MEMBER_INDEX } from './EditableCouncilGrid';
 import { deduplicateModels } from '../utils/modelHelpers';
 import { shouldLoadCustomEndpointModels } from '../utils/providerSources';
+import { filterOAuthModels, OAUTH_PROVIDERS } from '../constants/oauthProviders';
 import './CouncilSetup.css';
 
 const MAX_MEMBERS = 8;
@@ -39,6 +40,9 @@ function filterDirectModels(directModels, settings) {
   const ep = settings.enabled_providers || {};
   const dt = settings.direct_provider_toggles || {};
   return directModels.filter((model) => {
+    if (model.id?.startsWith('xai-oauth:') || model.id?.startsWith('openai-oauth:') || model.id?.startsWith('github-copilot:')) {
+      return false;
+    }
     if (model.provider === 'Groq') {
       return settings.groq_api_key_set && (ep.groq !== false);
     }
@@ -66,11 +70,15 @@ function getConfiguredModelSources(settings) {
     || settings.opencode_api_key_set
     || settings.notion2api_api_key_set
   );
+  const hasOAuth = OAUTH_PROVIDERS.some(
+    (p) => settings[p.connectedKey] && ep[p.id] !== false
+  );
   return {
     openrouter: !!settings.openrouter_api_key_set && (ep.openrouter !== false),
     ollama: !!settings.ollama_base_url && (ep.ollama !== false),
     direct: hasDirect && ((ep.direct !== false) || isNotion2APIConfigured(settings)),
     custom: shouldLoadCustomEndpointModels(settings),
+    oauth: hasOAuth,
   };
 }
 
@@ -166,7 +174,7 @@ export default function CouncilSetup({
         const loadSources = getConfiguredModelSources(settings);
         const ollamaUrl = settings.ollama_base_url || 'http://localhost:11434';
 
-        const [orModels, ollamaModels, directModels, customModels] = await Promise.all([
+        const [orModels, ollamaModels, directModels, customModels, oauthModels] = await Promise.all([
           loadSources.openrouter
             ? api.getModels().then((d) => d.models || []).catch(() => [])
             : [],
@@ -186,11 +194,16 @@ export default function CouncilSetup({
           loadSources.custom
             ? api.getCustomEndpointModels().then((d) => d.models || []).catch(() => [])
             : [],
+          loadSources.oauth
+            ? api.getDirectModels()
+              .then((d) => filterOAuthModels(Array.isArray(d) ? d : (d.models || []), settings))
+              .catch(() => [])
+            : [],
         ]);
 
         if (cancelled) return;
 
-        const combined = [...orModels, ...ollamaModels, ...directModels, ...customModels];
+        const combined = [...orModels, ...ollamaModels, ...directModels, ...customModels, ...oauthModels];
         const deduplicated = deduplicateModels(combined);
         setModels(deduplicated.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
 

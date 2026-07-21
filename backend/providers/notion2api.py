@@ -12,6 +12,7 @@ import httpx
 
 from .base import LLMProvider
 from .temperature import add_temperature_if_supported
+from ..credentials import resolve_api_key
 from ..output_hygiene import clean_model_visible_output, model_output_needs_hygiene_retry
 
 
@@ -134,15 +135,17 @@ class Notion2APIProvider(LLMProvider):
     def _get_config(self) -> tuple[str, str]:
         try:
             from ..settings import get_settings
-            settings = get_settings()
-            stored_url = settings.notion2api_base_url
-            stored_token = settings.notion2api_api_key or ""
+
+            stored_url = get_settings().notion2api_base_url
         except Exception:
             stored_url = DEFAULT_NOTION2API_BASE_URL
-            stored_token = ""
 
-        base_url = (os.getenv("NOTION2API_BASE_URL") or stored_url or DEFAULT_NOTION2API_BASE_URL).strip()
-        token = (os.getenv("NOTION2API_API_KEY") or stored_token or "").strip()
+        base_url = (
+            os.getenv("NOTION2API_BASE_URL")
+            or stored_url
+            or DEFAULT_NOTION2API_BASE_URL
+        ).strip()
+        token = resolve_api_key("notion2api").strip()
         return base_url.rstrip("/"), token
 
     def _headers(self, token: str) -> Dict[str, str]:

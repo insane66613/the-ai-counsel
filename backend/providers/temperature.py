@@ -9,6 +9,7 @@ INTERNAL_PROVIDER_PREFIXES = {
     "anthropic",
     "custom",
     "deepseek",
+    "github-copilot",
     "google",
     "groq",
     "mistral",
@@ -16,9 +17,11 @@ INTERNAL_PROVIDER_PREFIXES = {
     "nvidia",
     "ollama",
     "openai",
+    "openai-oauth",
     "opencode-go",
     "opencode-zen",
     "openrouter",
+    "xai-oauth",
 }
 
 OPENAI_FIXED_TEMPERATURE_PREFIXES = ("gpt-5",)

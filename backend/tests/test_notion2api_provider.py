@@ -95,6 +95,65 @@ def notion_env(monkeypatch):
     monkeypatch.setenv("NOTION2API_API_KEY", "test-token")
 
 
+def test_notion2api_config_uses_centralized_credential_resolver(monkeypatch):
+    import backend.providers.notion2api as provider_module
+    import backend.settings as settings_module
+
+    monkeypatch.delenv("NOTION2API_API_KEY", raising=False)
+    monkeypatch.delenv("NOTION2API_BASE_URL", raising=False)
+    monkeypatch.setattr(
+        settings_module,
+        "get_settings",
+        lambda: type(
+            "SettingsStub",
+            (),
+            {
+                "notion2api_base_url": "http://stored.example/v1",
+                "notion2api_api_key": "",
+            },
+        )(),
+    )
+    calls = []
+
+    def _resolve(provider_id):
+        calls.append(provider_id)
+        return "credential-store-token"
+
+    monkeypatch.setattr(provider_module, "resolve_api_key", _resolve)
+
+    assert Notion2APIProvider()._get_config() == (
+        "http://stored.example/v1",
+        "credential-store-token",
+    )
+    assert calls == ["notion2api"]
+
+
+def test_notion2api_config_does_not_bypass_disconnected_credential(monkeypatch):
+    import backend.providers.notion2api as provider_module
+    import backend.settings as settings_module
+
+    monkeypatch.setenv("NOTION2API_API_KEY", "environment-token")
+    monkeypatch.setenv("NOTION2API_BASE_URL", "http://override.example/v1/")
+    monkeypatch.setattr(
+        settings_module,
+        "get_settings",
+        lambda: type(
+            "SettingsStub",
+            (),
+            {
+                "notion2api_base_url": "http://stored.example/v1",
+                "notion2api_api_key": "legacy-token",
+            },
+        )(),
+    )
+    monkeypatch.setattr(provider_module, "resolve_api_key", lambda _provider_id: "")
+
+    assert Notion2APIProvider()._get_config() == (
+        "http://override.example/v1",
+        "",
+    )
+
+
 @pytest.mark.asyncio
 async def test_notion2api_query_uses_dedicated_prefix_and_endpoint(fake_httpx, notion_env):
     fake_httpx.responses.append((

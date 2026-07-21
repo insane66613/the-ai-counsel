@@ -15,6 +15,9 @@ const PROVIDER_ORDER = [
   'DeepSeek (Direct)',
   'Groq (Direct)',
   'Notion2API (Direct)',
+  'xAI SuperGrok (Subscription)',
+  'ChatGPT Plus/Pro (Subscription)',
+  'GitHub Copilot (Subscription)',
   'OpenRouter (Cloud)',
   'Local (Ollama)',
 ];
@@ -26,10 +29,17 @@ function getGroupLabel(model) {
   const isNotion2Api = model.source === 'notion2api'
     || model.id?.startsWith('notion2api:');
 
+  const isXaiOAuth = model.source === 'xai-oauth' || model.id?.startsWith('xai-oauth:');
+  const isOpenAiOAuth = model.source === 'openai-oauth' || model.id?.startsWith('openai-oauth:');
+  const isCopilot = model.source === 'github-copilot' || model.id?.startsWith('github-copilot:');
+
   if (isOpenRouter) return 'OpenRouter (Cloud)';
   if (isOllama) return 'Local (Ollama)';
   if (isCustom) return `${model.provider || 'Custom'} (Custom)`;
   if (isNotion2Api) return 'Notion2API (Direct)';
+  if (isXaiOAuth) return 'xAI SuperGrok (Subscription)';
+  if (isOpenAiOAuth) return 'ChatGPT Plus/Pro (Subscription)';
+  if (isCopilot) return 'GitHub Copilot (Subscription)';
   return `${model.provider || 'Direct'} (Direct)`;
 }
 

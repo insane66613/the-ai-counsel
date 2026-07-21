@@ -33,11 +33,17 @@ export const PROVIDER_CONFIG = {
   xai: { color: '#f8fafc', label: 'xAI', logo: xaiLogo },
   kimi: { color: '#cbd5e1', label: 'Kimi', logo: null, icon: 'K' },
   minimax: { color: '#a78bfa', label: 'MiniMax', logo: null, icon: 'M' },
+  'xai-oauth': { color: '#ffffff', label: 'xAI SuperGrok', logo: null, icon: '𝕏' },
+  'openai-oauth': { color: '#10a37f', label: 'ChatGPT', logo: openaiLogo },
+  'github-copilot': { color: '#24292f', label: 'GitHub Copilot', logo: null, icon: '🐙' },
   default: { color: '#888888', label: 'Model', logo: null, icon: '🤖' },
 };
 
 const PROVIDER_PREFIXES = [
   ['notion2api:', 'notion2api'],
+  ['github-copilot:', 'github-copilot'],
+  ['openai-oauth:', 'openai-oauth'],
+  ['xai-oauth:', 'xai-oauth'],
   ['opencode-zen:', 'opencode-zen'],
   ['opencode-go:', 'opencode-go'],
   ['custom:', 'custom'],

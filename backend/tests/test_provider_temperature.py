@@ -92,10 +92,10 @@ def test_anthropic_deprecated_temperature_model_detection(model_id):
 async def test_openai_omits_temperature_for_fixed_temperature_models(fake_httpx, monkeypatch):
     import backend.providers.openai as openai_module
 
-    class FakeSettings:
-        openai_api_key = "sk-test"
-
-    monkeypatch.setattr(openai_module, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "sk-test",
+    )
 
     provider = OpenAIProvider()
     result = await provider.query(
@@ -114,10 +114,10 @@ async def test_openai_omits_temperature_for_fixed_temperature_models(fake_httpx,
 async def test_openai_keeps_temperature_for_standard_chat_models(fake_httpx, monkeypatch):
     import backend.providers.openai as openai_module
 
-    class FakeSettings:
-        openai_api_key = "sk-test"
-
-    monkeypatch.setattr(openai_module, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "sk-test",
+    )
 
     provider = OpenAIProvider()
     await provider.query(
@@ -134,10 +134,10 @@ async def test_openai_keeps_temperature_for_standard_chat_models(fake_httpx, mon
 async def test_anthropic_omits_temperature_for_new_claude_models(fake_httpx, monkeypatch):
     import backend.providers.anthropic as anthropic_module
 
-    class FakeSettings:
-        anthropic_api_key = "sk-test"
-
-    monkeypatch.setattr(anthropic_module, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "sk-test",
+    )
     fake_httpx.responses.append(
         _FakeResponse(200, {"content": [{"type": "text", "text": "ok"}]})
     )
@@ -159,10 +159,10 @@ async def test_anthropic_omits_temperature_for_new_claude_models(fake_httpx, mon
 async def test_anthropic_keeps_temperature_for_older_claude_models(fake_httpx, monkeypatch):
     import backend.providers.anthropic as anthropic_module
 
-    class FakeSettings:
-        anthropic_api_key = "sk-test"
-
-    monkeypatch.setattr(anthropic_module, "get_settings", lambda: FakeSettings())
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "sk-test",
+    )
     fake_httpx.responses.append(
         _FakeResponse(200, {"content": [{"type": "text", "text": "ok"}]})
     )

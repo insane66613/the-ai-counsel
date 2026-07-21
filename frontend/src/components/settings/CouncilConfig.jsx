@@ -1,4 +1,5 @@
 import React from 'react';
+import { OAUTH_PROVIDERS } from '../../constants/oauthProviders';
 
 const DIRECT_PROVIDERS = [
     { id: 'openai', name: 'OpenAI', key: 'openai_api_key' },
@@ -67,6 +68,9 @@ export default function CouncilConfig({
             case 'nvidia': return !!settings?.nvidia_api_key_set;
             case 'opencode-zen': return !!settings?.opencode_api_key_set;
             case 'opencode-go': return !!settings?.opencode_api_key_set;
+            case 'xai-oauth': return !!settings?.xai_oauth_connected;
+            case 'openai-oauth': return !!settings?.openai_oauth_connected;
+            case 'github-copilot': return !!settings?.github_copilot_connected;
             default: return false;
         }
     };
@@ -104,6 +108,43 @@ export default function CouncilConfig({
                                 )}
                             </span>
                         </label>
+                    </div>
+
+                    <div className="filter-divider"></div>
+
+                    {/* Subscription OAuth — top-level, independent of Remote APIs */}
+                    <div className="filter-group" style={{ marginBottom: '12px' }}>
+                        {OAUTH_PROVIDERS.map((provider) => {
+                            const configured = isSourceConfigured(provider.id);
+                            return (
+                                <label
+                                    key={provider.id}
+                                    className={`toggle-wrapper ${!configured ? 'source-disabled' : ''}`}
+                                    title={!configured ? 'Not connected — sign in under LLM API Keys → Subscription Logins' : ''}
+                                >
+                                    <div className="toggle-switch">
+                                        <input
+                                            type="checkbox"
+                                            checked={configured && !!enabledProviders[provider.id]}
+                                            disabled={!configured}
+                                            onChange={(e) => {
+                                                setEnabledProviders(prev => ({
+                                                    ...prev,
+                                                    [provider.id]: e.target.checked,
+                                                }));
+                                            }}
+                                        />
+                                        <span className="slider"></span>
+                                    </div>
+                                    <span className="toggle-text">
+                                        {provider.label}
+                                        {!configured && (
+                                            <span className="toggle-hint"> · not connected</span>
+                                        )}
+                                    </span>
+                                </label>
+                            );
+                        })}
                     </div>
 
                     <div className="filter-divider"></div>
@@ -253,6 +294,7 @@ export default function CouncilConfig({
                             </label>
                         </div>
 
+                        <div className="direct-grid-label">Direct connections</div>
                         {/* Direct provider grid */}
                         <div className="direct-grid">
                             {DIRECT_PROVIDERS.map(dp => {

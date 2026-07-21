@@ -72,8 +72,8 @@ export default function Sidebar({
         <div className="sidebar-header">
         <div className="sidebar-title-wrapper">
           <div className="sidebar-title">Sanity<span className="title-plus">Cloud</span></div>
-          <div className="sidebar-subtitle">Created by: math Shamenson</div>
-          <div className="sidebar-version">v0.10.4</div>
+          <div className="sidebar-subtitle">Based on <a href="https://github.com/jacob-bd/the-ai-counsel" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none', borderBottom: '1px dotted rgba(255,255,255,0.3)', paddingBottom: '1px' }}>The AI Counsel</a> · SanityCloud adaptation</div>
+          <div className="sidebar-version">v0.11.0</div>
         </div>
         <button
           className="icon-button"

@@ -3,10 +3,13 @@
 import json
 import logging
 import os
+import re
+import threading
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR
+from .json_files import atomic_write_json
 from .metadata_utils import metadata_used_search
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,8 @@ logger = logging.getLogger(__name__)
 INDEX_FILE_NAME = "conversations_index.json"
 VALID_CONVERSATION_MODES = {"council", "advisors"}
 DEFAULT_CONVERSATION_TITLE = "New Conversation"
+_SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+_storage_lock = threading.RLock()
 
 def is_default_conversation_title(title: Optional[str]) -> bool:
     """Check if the title is a default, placeholder, or empty title."""
@@ -65,7 +70,13 @@ def ensure_data_dir():
 
 def get_conversation_path(conversation_id: str) -> str:
     """Get the file path for a conversation."""
-    return os.path.join(DATA_DIR, f"{conversation_id}.json")
+    if not isinstance(conversation_id, str) or not _SAFE_CONVERSATION_ID.fullmatch(conversation_id):
+        raise ValueError("Invalid conversation ID")
+    data_dir = Path(DATA_DIR).resolve()
+    path = (data_dir / f"{conversation_id}.json").resolve()
+    if path.parent != data_dir:
+        raise ValueError("Invalid conversation ID")
+    return str(path)
 
 
 def get_index_path() -> str:
@@ -89,8 +100,7 @@ def _save_index(index: List[Dict[str, Any]]):
     """Save the conversation index file."""
     ensure_data_dir()
     path = get_index_path()
-    with open(path, 'w') as f:
-        json.dump(index, f, indent=2)
+    atomic_write_json(path, index)
 
 
 def _normalize_conversation_mode(mode: Any) -> str:
@@ -279,57 +289,55 @@ def rebuild_index() -> List[Dict[str, Any]]:
     Rebuild the conversation index from actual conversation files.
     Use this fallback if index is missing or corrupted.
     """
-    ensure_data_dir()
-    index = []
+    with _storage_lock:
+        ensure_data_dir()
+        index = []
 
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json') and filename != INDEX_FILE_NAME:
-            path = os.path.join(DATA_DIR, filename)
-            try:
-                with open(path, 'r') as f:
-                    data = json.load(f)
-                    if not _is_conversation_record(data):
-                        continue
-                    index.append(_build_index_entry(data))
-            except (json.JSONDecodeError, OSError):
-                continue
+        for filename in os.listdir(DATA_DIR):
+            if filename.endswith('.json') and filename != INDEX_FILE_NAME:
+                path = os.path.join(DATA_DIR, filename)
+                try:
+                    with open(path, 'r') as f:
+                        data = json.load(f)
+                        if not _is_conversation_record(data):
+                            continue
+                        index.append(_build_index_entry(data))
+                except (json.JSONDecodeError, OSError):
+                    continue
 
-    # Sort by creation time, newest first
-    index.sort(key=lambda x: x["created_at"], reverse=True)
-    _save_index(index)
-    return index
+        index.sort(key=lambda x: x["created_at"], reverse=True)
+        _save_index(index)
+        return index
 
 
 def _update_index_entry(conversation: Dict[str, Any], *, mode: Optional[str] = None):
     """Update or add a single entry in the index."""
-    index = _load_index()
-    if index is None:
-        index = rebuild_index()
-        return  # rebuild already includes the current state if file was saved
+    with _storage_lock:
+        index = _load_index()
+        if index is None:
+            rebuild_index()
+            return  # rebuild already includes the current state if file was saved
 
-    entry = _build_index_entry(conversation, mode=mode)
-    # Remove existing entry if present
-    index = [item for item in index if item["id"] != conversation["id"]]
+        entry = _build_index_entry(conversation, mode=mode)
+        index = [item for item in index if item["id"] != conversation["id"]]
 
-    # Add new entry
-    index.append(entry)
+        index.append(entry)
 
-    # Sort and save
-    index.sort(key=lambda x: x["created_at"], reverse=True)
-    _save_index(index)
+        index.sort(key=lambda x: x["created_at"], reverse=True)
+        _save_index(index)
 
 
 def _remove_from_index(conversation_id: str):
     """Remove an entry from the index."""
-    index = _load_index()
-    if index is None:
-        return  # No index to remove from
+    with _storage_lock:
+        index = _load_index()
+        if index is None:
+            return  # No index to remove from
 
-    # Filter out the deleted conversation
-    new_index = [item for item in index if item["id"] != conversation_id]
+        new_index = [item for item in index if item["id"] != conversation_id]
 
-    if len(new_index) != len(index):
-        _save_index(new_index)
+        if len(new_index) != len(index):
+            _save_index(new_index)
 
 
 def create_conversation(conversation_id: str, mode: str = "council") -> Dict[str, Any]:
@@ -353,13 +361,10 @@ def create_conversation(conversation_id: str, mode: str = "council") -> Dict[str
         "messages": []
     }
 
-    # Save to file
-    path = get_conversation_path(conversation_id)
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
-    # Update index
-    _update_index_entry(conversation, mode=conversation["mode"])
+    with _storage_lock:
+        path = get_conversation_path(conversation_id)
+        atomic_write_json(path, conversation)
+        _update_index_entry(conversation, mode=conversation["mode"])
 
     return conversation
 
@@ -407,12 +412,10 @@ def save_conversation(conversation: Dict[str, Any]):
     conversation["mode"] = infer_conversation_mode(conversation)
     maybe_repair_conversation_title(conversation)
 
-    path = get_conversation_path(conversation['id'])
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
-    # Update index
-    _update_index_entry(conversation, mode=conversation["mode"])
+    with _storage_lock:
+        path = get_conversation_path(conversation['id'])
+        atomic_write_json(path, conversation)
+        _update_index_entry(conversation, mode=conversation["mode"])
 
 
 def list_conversations() -> List[Dict[str, Any]]:
@@ -612,14 +615,14 @@ def delete_conversation(conversation_id: str) -> bool:
     Returns:
         True if deleted, False if not found
     """
-    path = get_conversation_path(conversation_id)
-
-    if not os.path.exists(path):
+    try:
+        path = get_conversation_path(conversation_id)
+    except ValueError:
         return False
 
-    os.remove(path)
-
-    # Update index
-    _remove_from_index(conversation_id)
-
-    return True
+    with _storage_lock:
+        if not os.path.exists(path):
+            return False
+        os.remove(path)
+        _remove_from_index(conversation_id)
+        return True

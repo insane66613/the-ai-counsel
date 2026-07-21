@@ -614,7 +614,7 @@ Security/admin environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `LLM_COUNCIL_ADMIN_TOKEN` | unset | Enables remote access to settings export/import/reset when callers send `Authorization: Bearer <token>`. If unset, these admin endpoints accept only direct loopback clients and reject proxied external clients. |
+| `LLM_COUNCIL_ADMIN_TOKEN` | unset | Enables non-loopback REST and MCP access when callers send `Authorization: Bearer <token>`. Localhost remains token-free except credential-bearing settings admin endpoints, which require the token whenever it is configured. |
 | `LLM_COUNCIL_BIND_HOST` | `127.0.0.1` | Local dev launcher bind host for `python -m backend.main`. Set to `0.0.0.0` for intentional LAN access. |
 | `LLM_COUNCIL_BIND_PORT` | `8001` | Local dev launcher bind port for `python -m backend.main`. |
 

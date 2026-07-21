@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -13,13 +14,24 @@ import httpx
 class CouncilClient:
     """Async HTTP client for The AI Counsel REST API."""
 
-    def __init__(self, base_url: str = "http://localhost:8001", timeout: float = 180.0):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8001",
+        timeout: float = 180.0,
+        admin_token: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.admin_token = (
+            os.getenv("LLM_COUNCIL_ADMIN_TOKEN", "").strip()
+            if admin_token is None
+            else admin_token.strip()
+        )
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> CouncilClient:
-        self._client = httpx.AsyncClient(timeout=self.timeout)
+        headers = {"Authorization": f"Bearer {self.admin_token}"} if self.admin_token else None
+        self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self
 
     async def __aexit__(self, *_: Any) -> None:

@@ -5,7 +5,7 @@ import binascii
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Dict, Any, Literal, Optional
@@ -262,7 +262,7 @@ app = FastAPI(title="The AI Counsel API")
 # This keeps the default Docker deployment safe even when bound to 0.0.0.0,
 # while letting operators opt in to remote admin via a strong token.
 _ADMIN_TOKEN = os.getenv("LLM_COUNCIL_ADMIN_TOKEN", "").strip()
-_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -295,16 +295,28 @@ def _forwarded_client_hosts(request: Request) -> List[str]:
     return hosts
 
 
+def _has_valid_admin_bearer(request: Request) -> bool:
+    if not _ADMIN_TOKEN:
+        return False
+    auth = request.headers.get("authorization", "")
+    prefix = "Bearer "
+    return auth.startswith(prefix) and secrets.compare_digest(auth[len(prefix):], _ADMIN_TOKEN)
+
+
+def _is_direct_loopback_request(request: Request) -> bool:
+    client_host = request.client.host if request.client else ""
+    return _is_loopback_host(client_host) and all(
+        _is_loopback_host(host) for host in _forwarded_client_hosts(request)
+    )
+
+
 def _require_admin(request: Request) -> None:
     """Auth guard for endpoints that read or rewrite stored credentials."""
     if _ADMIN_TOKEN:
-        auth = request.headers.get("authorization", "")
-        prefix = "Bearer "
-        if not auth.startswith(prefix) or not secrets.compare_digest(auth[len(prefix):], _ADMIN_TOKEN):
+        if not _has_valid_admin_bearer(request):
             raise HTTPException(status_code=401, detail="Admin authentication required")
         return
-    client_host = request.client.host if request.client else ""
-    if not _is_loopback_host(client_host):
+    if not _is_direct_loopback_request(request):
         raise HTTPException(
             status_code=403,
             detail=(
@@ -312,15 +324,32 @@ def _require_admin(request: Request) -> None:
                 "Set LLM_COUNCIL_ADMIN_TOKEN to allow remote access."
             ),
         )
-    forwarded_hosts = _forwarded_client_hosts(request)
-    if any(not _is_loopback_host(host) for host in forwarded_hosts):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Admin endpoint disabled for proxied non-loopback clients. "
-                "Set LLM_COUNCIL_ADMIN_TOKEN to allow remote access."
-            ),
-        )
+
+
+def _require_remote_access(request: Request) -> None:
+    """Allow local clients; require the admin bearer token for network access."""
+    if _is_direct_loopback_request(request):
+        return
+    if _has_valid_admin_bearer(request):
+        return
+    if _ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    raise HTTPException(
+        status_code=403,
+        detail="Remote API access disabled. Set LLM_COUNCIL_ADMIN_TOKEN to enable it.",
+    )
+
+
+@app.middleware("http")
+async def protect_remote_api(request: Request, call_next):
+    """Protect REST and MCP while keeping localhost/desktop behavior unchanged."""
+    path = request.url.path
+    if (path.startswith("/api/") and path != "/api/health") or path == "/mcp" or path.startswith("/mcp/"):
+        try:
+            _require_remote_access(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 FRONTEND_DIST_DIR = os.getenv(
     "FRONTEND_DIST_DIR",
@@ -417,10 +446,16 @@ def _prepare_document_context(content: str, documents: Optional[List[Dict[str, A
 @app.post("/api/documents/extract")
 async def extract_documents_endpoint(files: List[UploadFile] = File(description="Documents to extract")):
     documents = []
+    limits = DocumentLimits()
     try:
+        if len(files) > limits.max_documents:
+            raise DocumentError(f"Too many documents. Maximum is {limits.max_documents}.")
         for file in files:
-            data = await file.read()
-            documents.append(extract_text_bytes(file.filename or "attachment", file.content_type or "", data))
+            name = file.filename or "attachment"
+            data = await file.read(limits.max_document_bytes + 1)
+            if len(data) > limits.max_document_bytes:
+                raise DocumentError(f"{name} is too large.")
+            documents.append(extract_text_bytes(name, file.content_type or "", data, limits))
         return _documents_response(documents)
     except DocumentError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

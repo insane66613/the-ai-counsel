@@ -6,13 +6,16 @@ import xaiLogo from '../assets/icons/xai.svg';
 
 // Helper to get visual properties for models
 export const VERIFIED_NOTION2API_MODELS = Object.freeze({
+  'orange-mousse': { displayName: 'GPT-5.6 Sol', family: 'openai', group: 'intelligent' },
+  'orchid-muffin': { displayName: 'GPT-5.6 Terra', family: 'openai', group: 'intelligent' },
+  'olive-jellyroll': { displayName: 'GPT-5.6 Luna', family: 'openai', group: 'fast' },
   'oatmeal-cookie': { displayName: 'GPT-5.2', family: 'openai', group: 'fast' },
   'oval-kumquat-medium': { displayName: 'GPT-5.4', family: 'openai', group: 'fast' },
   'opal-quince-medium': { displayName: 'GPT-5.5', family: 'openai', group: 'intelligent' },
   'vertex-gemini-2.5-flash': { displayName: 'Gemini 2.5 Flash', family: 'gemini', group: 'fast' },
   'vertex-gemini-3.5-flash': { displayName: 'Gemini 3.5 Flash', family: 'gemini', group: 'fast' },
   'almond-croissant-low': { displayName: 'Sonnet 4.6', family: 'anthropic', group: 'fast' },
-  'angel-cake-high': { displayName: 'Sonnet 5', family: 'anthropic', group: 'fast' },
+  'angel-cake-high': { displayName: 'Sonnet 5', family: 'anthropic', group: 'intelligent' },
   'avocado-froyo-medium': { displayName: 'Opus 4.6', family: 'anthropic', group: 'intelligent' },
   'apricot-sorbet-high': { displayName: 'Opus 4.7', family: 'anthropic', group: 'intelligent' },
   'ambrosia-tart-high': { displayName: 'Opus 4.8', family: 'anthropic', group: 'intelligent' },
@@ -20,12 +23,15 @@ export const VERIFIED_NOTION2API_MODELS = Object.freeze({
   'otaheite-apple-medium': { displayName: 'GPT-5.4 Nano', family: 'openai', group: 'fast' },
   'fireworks-minimax-m2.5': { displayName: 'MiniMax M2.5', family: 'minimax', group: 'intelligent' },
   'fireworks-kimi-k2.6': { displayName: 'Kimi K2.6', family: 'kimi', group: 'intelligent' },
+  'fireworks-kimi-k2.7': { displayName: 'Kimi K2.7 Code', family: 'kimi', group: 'intelligent' },
   'baseten-deepseek-v4-pro': { displayName: 'DeepSeek V4 Pro', family: 'deepseek', group: 'intelligent' },
   'xigua-mochi-medium': { displayName: 'Grok 4.3', family: 'xai', group: 'intelligent' },
+  'strawberry-whoopiepie': { displayName: 'Grok 4.5', family: 'xai', group: 'intelligent' },
   'xinomavro-cake': { displayName: 'Grok Build 0.1', family: 'xai', group: 'intelligent' },
   'galette-medium-thinking': { displayName: 'Gemini 3.1 Pro', family: 'gemini', group: 'intelligent' },
   'anthropic-haiku-4.5': { displayName: 'Haiku 4.5', family: 'anthropic', group: 'fast' },
   'acai-budino': { displayName: 'Fable 5', family: 'anthropic', group: 'intelligent' },
+  'acai-budino-high': { displayName: 'Fable 5', family: 'anthropic', group: 'intelligent' },
   'baseten-glm-5.2': { displayName: 'GLM 5.2', family: 'glm', group: 'intelligent' },
   gingerbread: { displayName: 'Gemini 3 Flash', family: 'gemini', group: 'fast' },
 });

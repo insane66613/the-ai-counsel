@@ -16,6 +16,25 @@ const getApiBase = () => {
 };
 
 const API_BASE = getApiBase();
+let adminToken = '';
+
+export function setAdminToken(token) {
+  adminToken = String(token || '').trim();
+}
+
+async function apiFetch(input, init = {}, allowPrompt = true) {
+  const headers = new Headers(init.headers || {});
+  if (adminToken) headers.set('Authorization', `Bearer ${adminToken}`);
+  const response = await globalThis.fetch(input, { ...init, headers });
+  if (response.status !== 401 || !allowPrompt || typeof window === 'undefined' || typeof window.prompt !== 'function') {
+    return response;
+  }
+
+  const token = window.prompt('This server requires an admin token. Enter it to continue:');
+  if (!token?.trim()) return response;
+  setAdminToken(token);
+  return apiFetch(input, init, false);
+}
 
 export function buildAvailableSearchProviders(settings) {
   const providers = [{ id: 'duckduckgo', name: 'DuckDuckGo' }];
@@ -62,7 +81,7 @@ export const api = {
    * List all conversations.
    */
   async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
+    const response = await apiFetch(`${API_BASE}/api/conversations`);
     if (!response.ok) {
       throw new Error('Failed to list conversations');
     }
@@ -73,7 +92,7 @@ export const api = {
    * Create a new conversation.
    */
   async createConversation(options = {}) {
-    const response = await fetch(`${API_BASE}/api/conversations`, {
+    const response = await apiFetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -90,7 +109,7 @@ export const api = {
    * Get a specific conversation.
    */
   async getConversation(conversationId) {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}`
     );
     if (!response.ok) {
@@ -104,7 +123,7 @@ export const api = {
    * Returns {active: false} when no run is active for this conversation.
    */
   async getConversationProgress(conversationId) {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}/progress`
     );
     if (!response.ok) {
@@ -117,7 +136,7 @@ export const api = {
    * Delete a conversation.
    */
   async deleteConversation(conversationId) {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}`,
       { method: 'DELETE' }
     );
@@ -131,7 +150,7 @@ export const api = {
    * Send a message in a conversation.
    */
   async sendMessage(conversationId, content, webSearch = false) {
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}/message`,
       {
         method: 'POST',
@@ -151,7 +170,7 @@ export const api = {
    * Get application settings.
    */
   async getSettings() {
-    const response = await fetch(`${API_BASE}/api/settings`);
+    const response = await apiFetch(`${API_BASE}/api/settings`);
     if (!response.ok) {
       throw new Error('Failed to get settings');
     }
@@ -162,7 +181,7 @@ export const api = {
    * Test Tavily API key.
    */
   async testTavilyKey(apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-tavily`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-tavily`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -179,7 +198,7 @@ export const api = {
    * Test OpenRouter API key.
    */
   async testOpenRouterKey(apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-openrouter`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-openrouter`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -196,7 +215,7 @@ export const api = {
    * Test Brave API key.
    */
   async testBraveKey(apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-brave`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-brave`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -213,7 +232,7 @@ export const api = {
    * Test TinyFish API key.
    */
   async testTinyfishKey(apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-tinyfish`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-tinyfish`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -230,7 +249,7 @@ export const api = {
    * Test Serper API key.
    */
   async testSerperKey(apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-serper`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-serper`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -247,7 +266,7 @@ export const api = {
    * Test a specific provider's API key.
    */
   async testProviderKey(providerId, apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-provider`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-provider`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -265,7 +284,7 @@ export const api = {
    * Pass product='zen' or 'go' to test a single product; omit to test both.
    */
   async testOpencodeKey(apiKey, product = null) {
-    const response = await fetch(`${API_BASE}/api/settings/test-opencode`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-opencode`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -282,7 +301,7 @@ export const api = {
    * Test Ollama connection.
    */
   async testOllamaConnection(baseUrl) {
-    const response = await fetch(`${API_BASE}/api/settings/test-ollama`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-ollama`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -299,7 +318,7 @@ export const api = {
    * Test dedicated Notion2API provider.
    */
   async testNotion2API(url, apiKey, root) {
-    const response = await fetch(`${API_BASE}/api/settings/test-notion2api`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-notion2api`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -316,7 +335,7 @@ export const api = {
    * Get dedicated Notion2API provider status.
    */
   async getNotion2APIStatus() {
-    const response = await fetch(`${API_BASE}/api/notion2api/status`);
+    const response = await apiFetch(`${API_BASE}/api/notion2api/status`);
     if (!response.ok) {
       throw new Error('Failed to get Notion2API status');
     }
@@ -327,7 +346,7 @@ export const api = {
    * Get dedicated Notion2API models.
    */
   async getNotion2APIModels() {
-    const response = await fetch(`${API_BASE}/api/notion2api/models`);
+    const response = await apiFetch(`${API_BASE}/api/notion2api/models`);
     if (!response.ok) {
       throw new Error('Failed to get Notion2API models');
     }
@@ -338,7 +357,7 @@ export const api = {
    * Test custom OpenAI-compatible endpoint.
    */
   async testCustomEndpoint(name, url, apiKey) {
-    const response = await fetch(`${API_BASE}/api/settings/test-custom-endpoint`, {
+    const response = await apiFetch(`${API_BASE}/api/settings/test-custom-endpoint`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -355,7 +374,7 @@ export const api = {
    * Get available models from custom endpoint.
    */
   async getCustomEndpointModels() {
-    const response = await fetch(`${API_BASE}/api/custom-endpoint/models`);
+    const response = await apiFetch(`${API_BASE}/api/custom-endpoint/models`);
     if (!response.ok) {
       throw new Error('Failed to get custom endpoint models');
     }
@@ -366,7 +385,7 @@ export const api = {
    * Get available models from OpenRouter.
    */
   async getModels() {
-    const response = await fetch(`${API_BASE}/api/models`);
+    const response = await apiFetch(`${API_BASE}/api/models`);
     if (!response.ok) {
       throw new Error('Failed to get models');
     }
@@ -381,7 +400,7 @@ export const api = {
     if (baseUrl) {
       url += `?base_url=${encodeURIComponent(baseUrl)}`;
     }
-    const response = await fetch(url);
+    const response = await apiFetch(url);
     if (!response.ok) {
       throw new Error('Failed to get Ollama models');
     }
@@ -392,7 +411,7 @@ export const api = {
    * Get available models from direct providers.
    */
   async getDirectModels() {
-    const response = await fetch(`${API_BASE}/api/models/direct`);
+    const response = await apiFetch(`${API_BASE}/api/models/direct`);
     if (!response.ok) {
       throw new Error('Failed to get direct models');
     }
@@ -403,7 +422,7 @@ export const api = {
    * Get default model settings.
    */
   async getDefaultSettings() {
-    const response = await fetch(`${API_BASE}/api/settings/defaults`);
+    const response = await apiFetch(`${API_BASE}/api/settings/defaults`);
     if (!response.ok) {
       throw new Error('Failed to get default settings');
     }
@@ -414,7 +433,7 @@ export const api = {
    * Update application settings.
    */
   async updateSettings(settings) {
-    const response = await fetch(`${API_BASE}/api/settings`, {
+    const response = await apiFetch(`${API_BASE}/api/settings`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -428,13 +447,13 @@ export const api = {
   },
 
   async getPersonas() {
-    const response = await fetch(`${API_BASE}/api/personas`);
+    const response = await apiFetch(`${API_BASE}/api/personas`);
     if (!response.ok) throw new Error('Failed to fetch personas');
     return response.json();
   },
 
   async updatePersona(personaId, overrides) {
-    const response = await fetch(`${API_BASE}/api/personas/${personaId}`, {
+    const response = await apiFetch(`${API_BASE}/api/personas/${personaId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(overrides),
@@ -444,7 +463,7 @@ export const api = {
   },
 
   async resetPersona(personaId) {
-    const response = await fetch(`${API_BASE}/api/personas/${personaId}/override`, {
+    const response = await apiFetch(`${API_BASE}/api/personas/${personaId}/override`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to reset persona');
@@ -454,7 +473,7 @@ export const api = {
   async extractDocuments(files) {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
-    const response = await fetch(`${API_BASE}/api/documents/extract`, {
+    const response = await apiFetch(`${API_BASE}/api/documents/extract`, {
       method: 'POST',
       body: formData,
     });
@@ -479,7 +498,7 @@ export const api = {
       body.documents = options.documents;
     }
 
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}/debate/stream?_t=${Date.now()}`,
       {
         method: 'POST',
@@ -538,7 +557,7 @@ export const api = {
     if (documents && documents.length > 0) {
       body.documents = documents;
     }
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}/message/stream?_t=${Date.now()}`,
       {
         method: 'POST',
@@ -591,7 +610,7 @@ export const api = {
     if (documents && documents.length > 0) {
       body.documents = documents;
     }
-    const response = await fetch(
+    const response = await apiFetch(
       `${API_BASE}/api/conversations/${conversationId}/message/debate?_t=${Date.now()}`,
       {
         method: 'POST',
@@ -613,7 +632,7 @@ export const api = {
   },
 
   async resumeRun(conversationId, continuationMode) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/pause/resume`, {
+    const response = await apiFetch(`${API_BASE}/api/conversations/${conversationId}/pause/resume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ continuation_mode: continuationMode })
@@ -623,7 +642,7 @@ export const api = {
   },
 
   async retryFailedProvider(conversationId, model, stage) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/pause/retry`, {
+    const response = await apiFetch(`${API_BASE}/api/conversations/${conversationId}/pause/retry`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, stage })
@@ -633,7 +652,7 @@ export const api = {
   },
 
   async firePendingProvider(conversationId, model, stage) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/pause/fire`, {
+    const response = await apiFetch(`${API_BASE}/api/conversations/${conversationId}/pause/fire`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, stage })

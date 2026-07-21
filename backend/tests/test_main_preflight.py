@@ -65,6 +65,43 @@ def test_extract_documents_multipart_text_file():
     assert "text" not in payload["attachments"][0]
 
 
+def test_extract_documents_multipart_rejects_oversized_file(monkeypatch):
+    from backend.documents import DocumentLimits
+
+    monkeypatch.setattr(
+        "backend.main.DocumentLimits",
+        lambda: DocumentLimits(max_document_bytes=4),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/documents/extract",
+            files=[("files", ("notes.txt", b"Alpha", "text/plain"))],
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "notes.txt is too large."
+
+
+def test_extract_documents_multipart_rejects_too_many_files(monkeypatch):
+    from backend.documents import DocumentLimits
+
+    monkeypatch.setattr(
+        "backend.main.DocumentLimits",
+        lambda: DocumentLimits(max_documents=1),
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/documents/extract",
+            files=[
+                ("files", ("one.txt", b"One", "text/plain")),
+                ("files", ("two.txt", b"Two", "text/plain")),
+            ],
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Too many documents. Maximum is 1."
+
+
 def test_extract_documents_json_base64_text_file():
     encoded = base64.b64encode(b"Alpha").decode()
 

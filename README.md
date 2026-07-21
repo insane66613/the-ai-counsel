@@ -317,7 +317,7 @@ LLM_COUNCIL_BIND_HOST=0.0.0.0 uv run python -m backend.main
 cd frontend && npm run dev -- --host
 ```
 
-Remote admin endpoints (`/api/settings/export`, `/api/settings/import`, `/api/settings/reset`) require `LLM_COUNCIL_ADMIN_TOKEN` when accessed by proxied or remote clients.
+Set `LLM_COUNCIL_ADMIN_TOKEN` before enabling network access. Localhost/desktop requests remain token-free; every non-loopback REST or MCP request must send `Authorization: Bearer <token>`. The web UI asks for the token when a remote server returns `401` and keeps it in memory only.
 
 ---
 

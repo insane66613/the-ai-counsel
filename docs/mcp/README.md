@@ -1,5 +1,7 @@
 # The AI Counsel — MCP Server
 
+Remote SSE connections require `Authorization: Bearer <LLM_COUNCIL_ADMIN_TOKEN>`; localhost connections remain token-free. See [SETUP-REMOTE.md](SETUP-REMOTE.md).
+
 The AI Counsel exposes a Model Context Protocol (MCP) server that lets AI tools like Claude Code and Gemini CLI send questions directly to your council and retrieve deliberation results — all without opening a browser. Ask your AI assistant to run a full 3-stage deliberation, configure council members, initiate multi-round advisor debates, customize persona thinking styles, or fetch past conversations, and it talks to the backend on your behalf.
 
 ## Quick Start

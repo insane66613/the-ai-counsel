@@ -594,6 +594,22 @@ class Notion2APIProvider(LLMProvider):
                 if any(term in lowered for term in ["embed", "whisper", "tts", "dall-e", "audio", "transcribe"]):
                     continue
 
+                # Disabled models, for example Fable 5 with disabledReason=trial_not_allowed,
+                # must not become selectable in the council picker.
+                is_disabled = bool(
+                    model.get("is_disabled")
+                    or model.get("disabled")
+                    or model.get("disabledReason")
+                    or model.get("disabled_reason")
+                )
+                if is_disabled:
+                    logger.info(
+                        "[Notion2API] Skipping disabled model %s (reason=%s)",
+                        canonical_id,
+                        model.get("disabledReason") or model.get("disabled_reason") or "disabled",
+                    )
+                    continue
+
                 display_name = str(
                     model.get("display_name") or model.get("name") or canonical_id
                 ).strip()
@@ -605,6 +621,7 @@ class Notion2APIProvider(LLMProvider):
                 ] if isinstance(raw_aliases, list) else []
                 models_by_id[canonical_id] = {
                     "id": f"{self.provider_prefix}:{canonical_id}",
+                    "canonical_id": canonical_id,
                     "name": f"{display_name} [Notion2API]",
                     "display_name": display_name,
                     "provider": self.provider_name,
@@ -613,6 +630,7 @@ class Notion2APIProvider(LLMProvider):
                     "upstream_host": str(model.get("upstream_host") or "").strip(),
                     "public_name": str(model.get("public_name") or "").strip(),
                     "aliases": aliases,
+                    "is_disabled": False,
                 }
 
             return sorted(

@@ -25,6 +25,16 @@ const DIRECT_PROVIDER_KEY_FLAGS = {
   'opencode go': 'opencode_api_key_set',
 };
 
+function isNotion2APIModel(model) {
+  return model?.provider?.toLowerCase() === 'notion2api'
+    || model?.source === 'notion2api'
+    || String(model?.id || '').startsWith('notion2api:');
+}
+
+function isNotion2APIConfigured(settings) {
+  const ep = settings.enabled_providers || {};
+  return settings.notion2api_api_key_set && ep.notion2api !== false;
+}
 function filterDirectModels(directModels, settings) {
   const ep = settings.enabled_providers || {};
   const dt = settings.direct_provider_toggles || {};
@@ -32,8 +42,8 @@ function filterDirectModels(directModels, settings) {
     if (model.provider === 'Groq') {
       return settings.groq_api_key_set && (ep.groq !== false);
     }
-    if (model.provider?.toLowerCase() === 'notion2api' || model.source === 'notion2api' || String(model.id || '').startsWith('notion2api:')) {
-      return settings.notion2api_api_key_set && (ep.notion2api !== false);
+    if (isNotion2APIModel(model)) {
+      return isNotion2APIConfigured(settings);
     }
     if (!ep.direct) return false;
     const providerKey = (model.provider || '').toLowerCase().replace(/\s+/g, '-');
@@ -59,7 +69,7 @@ function getConfiguredModelSources(settings) {
   return {
     openrouter: !!settings.openrouter_api_key_set && (ep.openrouter !== false),
     ollama: !!settings.ollama_base_url && (ep.ollama !== false),
-    direct: hasDirect && ((ep.direct !== false) || (settings.notion2api_api_key_set && ep.notion2api !== false)),
+    direct: hasDirect && ((ep.direct !== false) || isNotion2APIConfigured(settings)),
     custom: shouldLoadCustomEndpointModels(settings),
   };
 }
@@ -97,6 +107,7 @@ export default function CouncilSetup({
 }) {
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelReloadNonce, setModelReloadNonce] = useState(0);
   const [presets, setPresets] = useState([]);
   const [activePresetId, setActivePresetId] = useState(null);
   const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
@@ -113,7 +124,9 @@ export default function CouncilSetup({
   const loadedSnapshotRef = useRef(null);
   const initialLoadDone = useRef(false);
   const onCouncilChangeRef = useRef(onCouncilChange);
+  const councilModelsRef = useRef(councilModels);
   onCouncilChangeRef.current = onCouncilChange;
+  councilModelsRef.current = councilModels;
 
   const members = useMemo(() => filterMembers(councilModels), [councilModels]);
   const showChairman = editable || executionMode === 'full';
@@ -147,6 +160,7 @@ export default function CouncilSetup({
     let cancelled = false;
 
     const load = async () => {
+      setModelsLoading(true);
       try {
         const settings = await api.getSettings();
         const loadSources = getConfiguredModelSources(settings);
@@ -164,7 +178,7 @@ export default function CouncilSetup({
               provider: 'Ollama',
             }))).catch(() => [])
             : [],
-          loadSources.direct
+          loadSources.direct || isNotion2APIConfigured(settings)
             ? api.getDirectModels()
               .then((d) => filterDirectModels(Array.isArray(d) ? d : (d.models || []), settings))
               .catch(() => [])
@@ -185,7 +199,7 @@ export default function CouncilSetup({
 
         if (!initialLoadDone.current && editable) {
           initialLoadDone.current = true;
-          const currentMembers = filterMembers(councilModels);
+          const currentMembers = filterMembers(councilModelsRef.current);
           if (currentMembers.length === 0) {
             const defaultPreset = loadedPresets.find((p) => p.is_default) || null;
             if (defaultPreset) {
@@ -209,7 +223,11 @@ export default function CouncilSetup({
 
     load();
     return () => { cancelled = true; };
-  }, [editable]);
+  }, [editable, modelReloadNonce]);
+
+  const reloadModels = useCallback(() => {
+    setModelReloadNonce((value) => value + 1);
+  }, []);
 
   const persistCouncil = useCallback(async (nextMembers, nextChairman) => {
     const cappedMembers = nextMembers.slice(0, MAX_MEMBERS);
@@ -513,6 +531,10 @@ export default function CouncilSetup({
       {!modelsLoading && models.length === 0 && (
         <p className="council-setup__model-empty">
           No models available.{' '}
+          <button type="button" className="council-setup__link" onClick={reloadModels}>
+            Reload models
+          </button>
+          {' · '}
           <button type="button" className="council-setup__link" onClick={() => onOpenSettings?.('llm_keys')}>
             Configure API keys
           </button>

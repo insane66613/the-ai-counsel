@@ -108,6 +108,19 @@ async def test_export_settings():
 
 
 @pytest.mark.asyncio
+async def test_admin_token_is_sent_to_backend(monkeypatch):
+    monkeypatch.setenv("LLM_COUNCIL_ADMIN_TOKEN", "mcp-admin-token")
+    with respx.mock:
+        route = respx.get("http://localhost:8001/api/settings/export").mock(
+            return_value=httpx.Response(200, json={"status": "ok"})
+        )
+        async with CouncilClient() as client:
+            await client.export_settings()
+
+    assert route.calls[0].request.headers["Authorization"] == "Bearer mcp-admin-token"
+
+
+@pytest.mark.asyncio
 async def test_import_settings():
     with respx.mock:
         respx.post("http://localhost:8001/api/settings/import").mock(

@@ -12,6 +12,7 @@ If you want to run the MCP server locally and point it at a remote backend, see 
 
 - The AI Counsel running in a container (see [docs/DOCKER.md](../DOCKER.md))
 - Port `8001` accessible from your client machine (or via VPN/reverse proxy)
+- `LLM_COUNCIL_ADMIN_TOKEN` configured on the backend
 
 ---
 
@@ -23,7 +24,7 @@ Because the SSE server is hosted directly under `/mcp`, you can register it with
 claude mcp add --transport sse the-ai-counsel http://yourserver.com:8001/mcp/sse
 ```
 
-Replace `yourserver.com` with your server's IP address or domain.
+Replace `yourserver.com` with your server's IP address or domain, and configure your MCP client to send `Authorization: Bearer <LLM_COUNCIL_ADMIN_TOKEN>` on the SSE connection.
 
 For Gemini CLI:
 ```bash
@@ -34,7 +35,7 @@ gemini mcp add the-ai-counsel --url http://yourserver.com:8001/mcp/sse
 
 ## Step 2: Security
 
-The MCP server has no built-in authentication. Before exposing port `8001` publicly, protect it with one of these approaches:
+The backend requires `LLM_COUNCIL_ADMIN_TOKEN` for every non-loopback `/mcp` and `/api` request. Keep the token in your MCP client's secret/header configuration. A firewall, VPN, or authenticated reverse proxy is still recommended as an additional boundary:
 
 **Firewall rule (simplest):** Restrict port `8001` to your IP address only. On most cloud providers this is done in the security group or firewall panel.
 
@@ -55,7 +56,7 @@ location /mcp {
 ```
 
 > [!WARNING]
-> Do not expose port `8001` to the public internet without one of these protections. Anyone with the URL can invoke council tools, access your conversation logs, and consume your LLM API quota.
+> Do not expose port `8001` without setting `LLM_COUNCIL_ADMIN_TOKEN`. Also restrict network reachability where practical.
 
 ---
 

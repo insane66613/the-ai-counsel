@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
 from .search import SearchProvider
+from .json_files import atomic_write_json
 
 
 class AdvisorPreset(BaseModel):
@@ -472,8 +473,7 @@ def save_settings(settings: Settings) -> None:
 
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings.model_dump(), f, indent=2)
+    atomic_write_json(SETTINGS_FILE, settings.model_dump())
 
     _settings_cache = settings
     _settings_mtime = SETTINGS_FILE.stat().st_mtime

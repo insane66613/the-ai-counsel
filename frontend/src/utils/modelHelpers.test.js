@@ -14,10 +14,31 @@ import {
 
 describe('verified Notion2API model labels', () => {
   it('contains one verified entry for each canonical Notion2API model', () => {
-    expect(Object.keys(VERIFIED_NOTION2API_MODELS)).toHaveLength(22);
+    expect(Object.keys(VERIFIED_NOTION2API_MODELS)).toHaveLength(28);
     expect(VERIFIED_NOTION2API_MODELS['acai-budino'].displayName).toBe('Fable 5');
     expect(VERIFIED_NOTION2API_MODELS['baseten-glm-5.2'].displayName).toBe('GLM 5.2');
     expect(VERIFIED_NOTION2API_MODELS['angel-cake-high'].displayName).toBe('Sonnet 5');
+    expect(VERIFIED_NOTION2API_MODELS['angel-cake-high'].group).toBe('intelligent');
+  });
+
+  it('resolves newly observed 2026-07-09 codenames to human display names', () => {
+    expect(getShortModelName('notion2api:strawberry-whoopiepie')).toBe('Grok 4.5');
+    expect(getNotion2APIModelFamily('notion2api:strawberry-whoopiepie')).toBe('xai');
+    expect(getModelPickerDisplayName({
+      id: 'notion2api:strawberry-whoopiepie',
+      provider: 'Notion2API',
+      source: 'notion2api',
+    })).toBe('Grok 4.5');
+
+    expect(getShortModelName('notion2api:orange-mousse')).toBe('GPT-5.6 Sol');
+    expect(getNotion2APIModelFamily('notion2api:orange-mousse')).toBe('openai');
+    expect(getModelVisuals('notion2api:orange-mousse')).toMatchObject({
+      name: 'OpenAI via Notion2API',
+      short: 'GPT',
+    });
+
+    expect(getShortModelName('notion2api:acai-budino-high')).toBe('Fable 5');
+    expect(getNotion2APIModelFamily('notion2api:acai-budino-high')).toBe('anthropic');
   });
 
   it('maps exact Notion2API IDs to friendly names without changing the ID', () => {

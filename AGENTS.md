@@ -45,7 +45,7 @@ cd frontend && npm run dev -- --host
 **Backend bind variables:**
 - `LLM_COUNCIL_BIND_HOST`: dev launcher bind host, default `127.0.0.1`. Use `0.0.0.0` only when you intentionally want LAN access.
 - `LLM_COUNCIL_BIND_PORT`: dev launcher bind port, default `8001`.
-- `LLM_COUNCIL_ADMIN_TOKEN`: required for remote access to `/api/settings/export`, `/api/settings/import`, and `/api/settings/reset`. Without it, those admin endpoints only accept direct loopback clients and reject proxied external clients.
+- `LLM_COUNCIL_ADMIN_TOKEN`: required for every non-loopback REST and MCP request. Localhost/desktop access remains token-free, except credential-bearing settings admin endpoints require the token whenever it is configured.
 
 **Installing Dependencies:**
 ```bash

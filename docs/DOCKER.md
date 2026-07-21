@@ -63,7 +63,7 @@ Set these in a `.env` file in the project root, or inline in `docker-compose.yml
 |---|---|---|
 | `BACKEND_HOST` | *(empty)* | Full URL of the backend, e.g. `https://api.example.com`. Leave empty when frontend and API share the same domain/port. |
 | `FRONTEND_HOST` | *(empty)* | Comma-separated allowed CORS origins, e.g. `https://council.example.com`. Leave empty when serving both from the same origin. |
-| `LLM_COUNCIL_ADMIN_TOKEN` | *(empty)* | Required for remote access to settings export/import/reset. When unset, those admin endpoints only accept direct loopback clients and reject proxied external clients. |
+| `LLM_COUNCIL_ADMIN_TOKEN` | *(empty)* | Required for all non-loopback REST and MCP access. Localhost/desktop access remains token-free. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint. **Must be changed when using Docker** — see below. |
 | `FRONTEND_DIST_DIR` | `/app/frontend/dist` | Path to the compiled frontend. Do not change unless you know what you're doing. |
 
@@ -79,7 +79,7 @@ FRONTEND_HOST=
 # Required if using local Ollama with Docker
 OLLAMA_BASE_URL=http://host.docker.internal:11434
 
-# Required if you need Backup & Reset admin actions from another device or via a reverse proxy
+# Required for any REST, web UI, or MCP access from another device or reverse proxy
 LLM_COUNCIL_ADMIN_TOKEN=replace-with-a-long-random-token
 ```
 
@@ -145,7 +145,7 @@ BACKEND_HOST=https://api.example.com
 FRONTEND_HOST=https://council.example.com
 ```
 
-Settings export/import/reset are admin endpoints because settings exports include plaintext API keys. If you need to use those Backup & Reset actions through a reverse proxy or from another device, set `LLM_COUNCIL_ADMIN_TOKEN` and send `Authorization: Bearer <token>` with those requests. Without the token, proxied external clients are rejected even though the reverse proxy connects to the backend over `127.0.0.1`.
+All non-loopback REST and MCP requests require `Authorization: Bearer <token>`. The web UI prompts once after a remote `401` and keeps the token in memory only. Settings export/import/reset also require the token on localhost whenever `LLM_COUNCIL_ADMIN_TOKEN` is configured because exports contain plaintext API keys. Configure reverse proxies to preserve the `Authorization` header and overwrite forwarding headers rather than accepting caller-supplied values.
 
 ---
 

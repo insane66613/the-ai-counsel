@@ -1,5 +1,7 @@
 # MCP Tools Reference
 
+Remote SSE connections must send `Authorization: Bearer <LLM_COUNCIL_ADMIN_TOKEN>`. Localhost connections remain token-free. The MCP shim forwards the configured token to protected backend operations, including `config_backup`.
+
 The The AI Counsel MCP server exposes **10 action-based tools**. Each tool groups related operations behind an `action` parameter. Your AI assistant picks the tool and action from what you ask — you rarely need to name them directly.
 
 **Breaking change (v0.5.2):** The previous 25 single-purpose tools were replaced by 9 consolidated tools. Old tool names (`run_deliberation`, `get_council_config`, `check_health`, etc.) no longer exist. **v0.7.0** added `run_iterative_debate` as the 10th tool.

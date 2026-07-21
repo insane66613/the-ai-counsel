@@ -81,7 +81,7 @@ localhost:8001            yourserver.com:8001
 Yes. Since SSE is built into the backend, any time you run `uv run python -m backend.main`, the SSE endpoint is live at `http://localhost:8001/mcp/sse`. You can register this URL in Claude Code. It works perfectly, though stdio is the default local setup.
 
 **Does SSE have built-in authentication?**
-No. The MCP server does not implement token-based auth on the `/mcp` endpoints. If port `8001` is exposed to the internet, protect the entire app with a firewall rule, a VPN, or a reverse proxy that enforces auth (nginx with `auth_basic`, Caddy with `basicauth`, Cloudflare Access, etc.).
+Yes. Non-loopback `/mcp` requests require `Authorization: Bearer <LLM_COUNCIL_ADMIN_TOKEN>`. Localhost remains token-free. A firewall, VPN, or authenticated reverse proxy is still recommended for public deployments.
 
 **Which transport has better performance?**
 For individual users the difference is imperceptible — both add only a few milliseconds of overhead on top of LLM inference time. stdio avoids one network hop for local setups. SSE saves you from maintaining a local Python environment.

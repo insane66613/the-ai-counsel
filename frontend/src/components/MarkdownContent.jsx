@@ -1,11 +1,16 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
 const REMARK_PLUGINS = [remarkGfm];
-// rehype-raw allows raw HTML elements (e.g. <details>, <summary>, <mark>)
-// that models commonly emit in their responses.
-const REHYPE_PLUGINS = [rehypeRaw];
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  tagNames: [...new Set([...(defaultSchema.tagNames || []), 'details', 'summary', 'mark'])],
+};
+// Preserve the small set of useful raw HTML model responses use, then strip
+// active content and unsafe attributes before React sees it.
+const REHYPE_PLUGINS = [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA]];
 
 export function MarkdownRenderer({ children }) {
   const content = typeof children === 'string' ? children : String(children || '');

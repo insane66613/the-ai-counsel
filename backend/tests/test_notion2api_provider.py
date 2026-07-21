@@ -172,6 +172,7 @@ async def test_notion2api_get_models_uses_canonical_metadata_and_deduplicates(fa
 
     assert models == [{
         "id": "notion2api:baseten-glm-5.2",
+        "canonical_id": "baseten-glm-5.2",
         "name": "GLM 5.2 [Notion2API]",
         "display_name": "GLM 5.2",
         "provider": "Notion2API",
@@ -180,7 +181,40 @@ async def test_notion2api_get_models_uses_canonical_metadata_and_deduplicates(fa
         "upstream_host": "baseten",
         "public_name": "glm-5.2",
         "aliases": ["glm-5.2"],
+        "is_disabled": False,
     }]
+
+
+@pytest.mark.asyncio
+async def test_notion2api_get_models_excludes_disabled_fable(fake_httpx, notion_env):
+    """Disabled models, such as Fable 5 trial_not_allowed, must not be selectable."""
+    fake_httpx.responses.append((
+        200,
+        {"data": [
+            {
+                "id": "strawberry-whoopiepie",
+                "canonical_id": "strawberry-whoopiepie",
+                "display_name": "Grok 4.5",
+                "model_family": "xai",
+            },
+            {
+                "id": "acai-budino-high",
+                "canonical_id": "acai-budino-high",
+                "display_name": "Fable 5",
+                "model_family": "anthropic",
+                "is_disabled": True,
+                "disabledReason": "trial_not_allowed",
+            },
+        ]},
+        "",
+    ))
+
+    models = await Notion2APIProvider().get_models()
+
+    ids = {m["id"] for m in models}
+    assert ids == {"notion2api:strawberry-whoopiepie"}
+    assert all(m["is_disabled"] is False for m in models)
+    assert models[0]["canonical_id"] == "strawberry-whoopiepie"
 
 
 @pytest.mark.asyncio

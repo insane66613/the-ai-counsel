@@ -53,6 +53,10 @@ def anthropic_settings(monkeypatch):
         anthropic_api_key="test-key"
     )
     monkeypatch.setattr("backend.providers.anthropic.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "test-key" if provider == "anthropic" else "",
+    )
     return settings
 
 

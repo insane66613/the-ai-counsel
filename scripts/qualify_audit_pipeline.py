@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
 
 from backend.audit_pipeline import run_audit_pipeline
 from backend.config import get_chairman_model, get_council_models
+from backend.credentials import resolve_api_key
 from backend.model_preflight import preflight_models
 from backend.providers.notion2api import Notion2APIProvider
 from backend.settings import get_settings, normalize_model_ids
@@ -331,7 +332,7 @@ async def _provider_preflight(models: list[str], chairman: str) -> tuple[bool, s
         provider = Notion2APIProvider()
         result = await provider.validate_connection(
             settings.notion2api_base_url,
-            settings.notion2api_api_key or os.getenv("NOTION2API_API_KEY") or "",
+            resolve_api_key("notion2api"),
         )
         if not result.get("success"):
             return False, str(result.get("message") or "Notion2API unavailable")

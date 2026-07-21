@@ -69,6 +69,10 @@ def custom_settings(monkeypatch):
         custom_endpoint_supports_attachments=True,
     )
     monkeypatch.setattr("backend.providers.custom_openai.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "backend.credentials.get_api_key",
+        lambda provider: "test-key" if provider == "custom_endpoint" else "",
+    )
     return settings
 
 

@@ -91,8 +91,11 @@ def fake_httpx(monkeypatch):
 
 @pytest.fixture
 def notion_env(monkeypatch):
+    import backend.providers.notion2api as provider_module
+
     monkeypatch.setenv("NOTION2API_BASE_URL", "http://127.0.0.1:8120/v1")
     monkeypatch.setenv("NOTION2API_API_KEY", "test-token")
+    monkeypatch.setattr(provider_module, "resolve_api_key", lambda _provider_id: "test-token")
 
 
 def test_notion2api_config_uses_centralized_credential_resolver(monkeypatch):
